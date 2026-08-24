@@ -27,6 +27,24 @@ tool falls back to scraping the models directory tree + grepping candidate files
 on the raw CDN; that fallback can be incomplete, so a NO without a token is not
 definitive. Step 4 also needs a token on rate-limited IPs.
 
+### Local checkouts (no GitHub API)
+
+To avoid GitHub API rate limits entirely, point the tool at local clones of the
+framework repositories. In local mode all source reads (models directory,
+`registry.py`, and version history) are served from disk via `git`, and **no
+GitHub API requests are made** — only the architecture lookup (step 1) and the
+docs check (step 2) still touch the network.
+
+```bash
+# Use local clones (no GITHUB_TOKEN needed for source/registry/version)
+python3 main.py --framework vllm   --vllm-path   /path/to/vllm   deepseek-ai/DeepSeek-V3
+python3 main.py --framework sglang --sglang-path /path/to/sglang Qwen/Qwen3.6-35B-A3B
+```
+
+`--vllm-ref` is ignored when `--vllm-path` is given. The local path must be a
+git checkout of the framework repo (so `git log`/`git tag` are available for
+version detection).
+
 No third-party dependencies — standard library only.
 
 ## Usage
@@ -53,6 +71,8 @@ python3 main.py --framework vllm meta-llama/Llama-3.1-8B
 | `--token`       | GitHub token (or set `GITHUB_TOKEN` env).                          |
 | `--no-docs`     | Skip the docs check.                                               |
 | `--vllm-ref`    | vLLM git ref (branch/tag) for the registry check (default: `main`).|
+| `--vllm-path`   | Local vllm repo checkout; skip GitHub API for source/registry/ver. |
+| `--sglang-path` | Local sglang repo checkout; skip GitHub API for source/ver.        |
 | `-v, --verbose` | Verbose output.                                                    |
 
 ## License
