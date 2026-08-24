@@ -33,14 +33,14 @@ No third-party dependencies — standard library only.
 
 ```bash
 # Check a single framework
-GITHUB_TOKEN=xxx python3 model_support_check.py --framework sglang Qwen/Qwen3.6-35B-A3B
-GITHUB_TOKEN=xxx python3 model_support_check.py --framework vllm deepseek-ai/DeepSeek-V3
+GITHUB_TOKEN=xxx python3 main.py --framework sglang Qwen/Qwen3.6-35B-A3B
+GITHUB_TOKEN=xxx python3 main.py --framework vllm deepseek-ai/DeepSeek-V3
 
 # Check both frameworks at once (default)
-GITHUB_TOKEN=xxx python3 model_support_check.py --framework both meta-llama/Llama-3.1-8B
+GITHUB_TOKEN=xxx python3 main.py --framework both meta-llama/Llama-3.1-8B
 
 # Best-effort, no token (results may be incomplete)
-python3 model_support_check.py --framework vllm meta-llama/Llama-3.1-8B
+python3 main.py --framework vllm meta-llama/Llama-3.1-8B
 ```
 
 ### Options
@@ -57,4 +57,4 @@ python3 model_support_check.py --framework vllm meta-llama/Llama-3.1-8B
 
 ## License
 
-[The Unlicense](LICENSE) — released into the public domain.
+[The Unlicense](../LICENSE) — released into the public domain.

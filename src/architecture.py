@@ -2,7 +2,7 @@
 
 import json
 
-from http_utils import _get, _get_json
+from .http_utils import _get, _get_json
 
 
 def get_architecture(model_id, source="auto"):

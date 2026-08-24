@@ -3,8 +3,8 @@
 import re
 import urllib.parse
 
-import config
-from http_utils import _get, _get_json
+from . import config
+from .http_utils import _get, _get_json
 
 
 def _list_model_files(verbose=False):

@@ -2,8 +2,8 @@
 
 import re
 
-import config
-from http_utils import _get
+from . import config
+from .http_utils import _get
 
 
 def check_docs(arch, verbose=False):

@@ -4,7 +4,7 @@ import json
 import urllib.error
 import urllib.request
 
-from config import UA
+from .config import UA
 
 
 def _get(url, headers=None, timeout=25, ua=None):

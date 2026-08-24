@@ -8,21 +8,21 @@ version (step 4), and vllm_registry (vLLM-specific). See each module for the
 methodology details.
 
 Usage:
-  GITHUB_TOKEN=xxx python3 model_support_check.py --framework sglang Qwen/Qwen3.6-35B-A3B
-  GITHUB_TOKEN=xxx python3 model_support_check.py --framework vllm deepseek-ai/DeepSeek-V3
-  python3 model_support_check.py --framework vllm meta-llama/Llama-3.1-8B   # best-effort
+  GITHUB_TOKEN=xxx python3 main.py --framework sglang Qwen/Qwen3.6-35B-A3B
+  GITHUB_TOKEN=xxx python3 main.py --framework vllm deepseek-ai/DeepSeek-V3
+  python3 main.py --framework vllm meta-llama/Llama-3.1-8B   # best-effort
 """
 
 import argparse
 import os
 import sys
 
-import config
-from architecture import get_architecture
-from docs import check_docs
-from source_check import check_github
-from version import get_version
-from vllm_registry import (
+from . import config
+from .architecture import get_architecture
+from .docs import check_docs
+from .source_check import check_github
+from .version import get_version
+from .vllm_registry import (
     check_vllm_registry,
     fetch_vllm_registry,
     parse_vllm_registry,
