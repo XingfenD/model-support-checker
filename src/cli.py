@@ -41,6 +41,10 @@ def main():
     ap.add_argument("--no-docs", action="store_true", help="skip docs check")
     ap.add_argument("--vllm-ref", default=None,
                     help="vLLM git ref (branch/tag) for registry check (default: main)")
+    ap.add_argument("--vllm-path", default=None,
+                    help="local vllm repo checkout path (skip GitHub API)")
+    ap.add_argument("--sglang-path", default=None,
+                    help="local sglang repo checkout path (skip GitHub API)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -54,9 +58,12 @@ def main():
     results = {}
 
     for fw_name in frameworks:
-        config.set_active(fw_name)
+        local_path = args.sglang_path if fw_name == "sglang" else args.vllm_path
+        config.set_active(fw_name, local_path)
 
         print(f"========== {config.NAME} ==========")
+        if config.LOCAL_DIR:
+            print(f"  (using local checkout: {config.LOCAL_DIR})")
 
         # Step 3 (authoritative)
         print("[3] GitHub source check (authoritative)...")

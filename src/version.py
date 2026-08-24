@@ -2,6 +2,7 @@
 
 import json
 import re
+import subprocess
 import urllib.parse
 
 from . import config
@@ -53,6 +54,8 @@ def _first_release_after(date_iso, token):
 def get_version(file_path, token, verbose=False):
     if not file_path:
         return None
+    if config.LOCAL_DIR:
+        return _get_version_local(file_path, verbose)
     try:
         date = _earliest_commit_date(file_path, token)
     except RuntimeError as e:
@@ -65,3 +68,40 @@ def get_version(file_path, token, verbose=False):
         return _first_release_after(date, token)
     except RuntimeError as e:
         return f"unknown ({e}; try GITHUB_TOKEN)"
+
+
+def _get_version_local(file_path, verbose=False):
+    """Local (git-based) version approximation, never touches GitHub.
+
+    Finds the earliest commit that touched the file, then the first release tag
+    created at or after that commit's date.
+    """
+    repo = config.LOCAL_DIR
+    log = subprocess.run(
+        ["git", "-C", repo, "log", "--reverse", "--format=%aI", "--", file_path],
+        capture_output=True, text=True,
+    )
+    if log.returncode != 0 or not log.stdout.strip():
+        if verbose:
+            print(f"  [version] no git history for {file_path}.")
+        return "unknown"
+    first_date = log.stdout.strip().splitlines()[0]
+    if verbose:
+        print(f"  [version] earliest commit touching {file_path}: {first_date}")
+
+    tags = subprocess.run(
+        ["git", "-C", repo, "for-each-ref", "--sort=creatordate",
+         "--format=%(creatordate:iso-strict) %(refname:short)", "refs/tags"],
+        capture_output=True, text=True,
+    )
+    if tags.returncode != 0:
+        return "unreleased (main)"
+    picked = None
+    for line in tags.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        date, tag = line.split(" ", 1)
+        if date >= first_date and (picked is None or date < picked[0]):
+            picked = (date, tag)
+    return picked[1] if picked else "unreleased (main)"

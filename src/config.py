@@ -1,5 +1,7 @@
 """Framework configuration and active-framework state for model-support-checker."""
 
+import os
+
 FRAMEWORKS = {
     "sglang": {
         "label": "SGLang",
@@ -49,11 +51,17 @@ RAW = None
 MODELS_DIR = None
 DOCS_URL = None
 NAME = None  # human label, e.g. "SGLang"
+LOCAL_DIR = None  # local checkout path; when set, no GitHub API calls are made
 
 
-def set_active(fw_name):
-    """Initialise the active-framework globals from FRAMEWORKS[fw_name]."""
-    global REPO, API, RAW, MODELS_DIR, DOCS_URL, NAME
+def set_active(fw_name, local_dir=None):
+    """Initialise the active-framework globals from FRAMEWORKS[fw_name].
+
+    If local_dir is provided it is treated as a local checkout of the framework
+    repository; all source reads (models dir, registry.py, version history) are
+    served from disk via git, and no GitHub API requests are made.
+    """
+    global REPO, API, RAW, MODELS_DIR, DOCS_URL, NAME, LOCAL_DIR
     fw = FRAMEWORKS[fw_name]
     REPO = fw["repo"]
     API = f"https://api.github.com/repos/{REPO}"
@@ -61,3 +69,25 @@ def set_active(fw_name):
     MODELS_DIR = fw["models_dir"]
     DOCS_URL = fw["docs"]
     NAME = fw["label"]
+    LOCAL_DIR = os.path.expanduser(local_dir) if local_dir else None
+
+
+def read_source(rel_path):
+    """Return the text of a repository-relative file.
+
+    When LOCAL_DIR is set the file is read from disk; otherwise it is fetched
+    from the GitHub raw CDN. Returns None on failure.
+    """
+    if LOCAL_DIR:
+        p = os.path.join(LOCAL_DIR, rel_path)
+        try:
+            with open(p, encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return None
+    from .http_utils import _get
+    try:
+        body, _ = _get(f"{RAW}/{rel_path}")
+    except RuntimeError:
+        return None
+    return body

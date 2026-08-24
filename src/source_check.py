@@ -1,5 +1,6 @@
 """Step 3: GitHub source check (the authoritative support signal)."""
 
+import os
 import re
 import urllib.parse
 
@@ -10,11 +11,29 @@ from .http_utils import _get, _get_json
 def _list_model_files(verbose=False):
     """List every .py file in the framework's models directory.
 
-    Primary: the REST Contents API (returns the FULL directory reliably, even
-    for large dirs) -- needs a token or a non-rate-limited IP.
-    Fallback: scrape the GitHub tree web page (website CDN, no token, but can be
-    paginated/incomplete for very large directories).
+    Local mode (config.LOCAL_DIR set): read the directory straight from disk.
+    Network mode:
+      Primary: the REST Contents API (returns the FULL directory reliably, even
+      for large dirs) -- needs a token or a non-rate-limited IP.
+      Fallback: scrape the GitHub tree web page (website CDN, no token, but can
+      be paginated/incomplete for very large directories).
     """
+    # Local checkout: list files from disk.
+    if config.LOCAL_DIR:
+        d = os.path.join(config.LOCAL_DIR, config.MODELS_DIR)
+        try:
+            names = {f for f in os.listdir(d) if f.endswith(".py")}
+        except OSError:
+            if verbose:
+                print(f"  [local] could not list models directory {d}.")
+            return None
+        names.discard("__init__.py")
+        if names:
+            if verbose:
+                print(f"  [local] listed {len(names)} model files from {d}.")
+            return names
+        return None
+
     # 1) Contents API (full, reliable).
     url = f"{config.API}/contents/{config.MODELS_DIR}"
     data = _get_json(url)
@@ -87,7 +106,13 @@ def check_github(arch, token, verbose=False):
     Fallback (token-less, best-effort): scrape the models directory tree from
     the GitHub website and grep candidate files on the raw CDN. The website tree
     can be paginated/incomplete, so a NO here is not definitive without a token.
+
+    Local mode (config.LOCAL_DIR set): no GitHub API is called; the model files
+    are grepped directly on disk and a hit is definitive.
     """
+    if config.LOCAL_DIR:
+        return _check_local(arch, verbose)
+
     if token:
         inner = "^" + config.MODELS_DIR.replace("/", r"\/") + r"\/"
         q = f"{arch} repo:{config.REPO} path:/{inner}/"
@@ -112,12 +137,25 @@ def check_github(arch, token, verbose=False):
         print("  [github] fallback candidates: " + ", ".join(candidates) or "(none)")
     for fname in candidates:
         path = f"{config.MODELS_DIR}/{fname}"
-        try:
-            body, _ = _get(f"{config.RAW}/{path}")
-        except RuntimeError:
-            body = None
+        body = config.read_source(path)
         if body and arch in body:
             if verbose:
                 print(f"  [github] '{arch}' found in {path}")
+            return True, path
+    return False, None
+
+
+def _check_local(arch, verbose=False):
+    """Local-only implementation of check_github: grep model files on disk."""
+    files = _list_model_files(verbose)
+    candidates = _match_files(arch, files) if files else []
+    if verbose:
+        print("  [local] candidates: " + (", ".join(candidates) or "(none)"))
+    for fname in candidates:
+        path = f"{config.MODELS_DIR}/{fname}"
+        body = config.read_source(path)
+        if body and arch in body:
+            if verbose:
+                print(f"  [local] '{arch}' found in {path}")
             return True, path
     return False, None
