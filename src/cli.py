@@ -21,14 +21,9 @@ import time
 
 from . import config, state
 from .architecture import get_architecture
-from .docs import check_docs
+from .framework_strategies import STRATEGIES
 from .source_check import check_github
 from .version import get_version
-from .vllm_registry import (
-    check_vllm_registry,
-    fetch_vllm_registry,
-    parse_vllm_registry,
-)
 
 # Max seconds to wait for background checkout refreshes before exiting.
 _REFRESH_JOIN_SECONDS = 15
@@ -90,7 +85,7 @@ def main():
     if not args.model_id:
         ap.error("model_id is required (e.g. Qwen/Qwen3.6-35B-A3B)")
 
-    frameworks = list(config.FRAMEWORKS) if args.framework == "both" else [args.framework]
+    frameworks = list(STRATEGIES) if args.framework == "both" else [args.framework]
 
     # Local mode: refresh checkouts in the background while checking runs;
     # failures/staleness are only reported at the very end, never blocking.
@@ -111,7 +106,8 @@ def main():
 
     for fw_name in frameworks:
         local_path = sglang_path if fw_name == "sglang" else vllm_path
-        config.set_active(fw_name, local_path)
+        strategy = STRATEGIES[fw_name]
+        strategy.activate(local_path)
 
         print(f"========== {config.NAME} ==========")
         if config.LOCAL_DIR:
@@ -123,56 +119,26 @@ def main():
         print(f"    Supported in source: {'YES' if supported else 'NO'}"
               + (f"  ({file_path})" if file_path else ""))
 
-        # vLLM: parse registry.py for detailed info
-        vllm_registry_info = None
-        if fw_name == "vllm":
-            try:
-                ref = args.vllm_ref or config.FRAMEWORKS["vllm"]["branch"]
-                reg_source = fetch_vllm_registry(ref=ref, verbose=args.verbose)
-                reg_supported, reg_previously, reg_oot = parse_vllm_registry(
-                    reg_source, verbose=args.verbose
-                )
-                total = len(reg_supported)
-                print(f"    Registry parsed: {total} architectures registered")
-                vllm_registry_info = check_vllm_registry(
-                    arch, reg_supported, reg_previously, reg_oot
-                )
-                status = vllm_registry_info["status"]
-                if status == "supported":
-                    print(f"    Category  : {vllm_registry_info['category']}")
-                    print(f"    Module    : {vllm_registry_info['module']}")
-                    print(f"    Class     : {vllm_registry_info['class_name']}")
-                elif status == "previously_supported":
-                    print(f"    PREVIOUSLY SUPPORTED (removed)")
-                    print(f"    Last version: v{vllm_registry_info['last_version']}")
-                elif status == "oot_plugin":
-                    print(f"    OUT-OF-TREE PLUGIN REQUIRED")
-                    print(f"    Plugin: {vllm_registry_info['plugin_url']}")
-            except RuntimeError as e:
-                if args.verbose:
-                    print(f"    [registry] skipped: {e}")
+        # Framework-specific extra checks (e.g. vLLM registry)
+        extra = strategy.extra_checks(arch, args.token, args.verbose, ref=args.vllm_ref)
 
         # Step 2 (docs, supplementary)
         docs = "skipped"
         if not args.no_docs:
             print("[2] Official docs check...")
-            docs = check_docs(arch, args.verbose)
+            docs = strategy.check_docs(arch, args.verbose)
             print(f"    Docs mention: {docs}")
 
         # Step 4 (version)
         version = None
         if supported:
             print(f"[4] Determining first supporting {config.NAME} version...")
-            # For vLLM, prefer registry.py path for version detection
-            version_path = file_path
-            if fw_name == "vllm":
-                version_path = file_path or f"{config.MODELS_DIR}/registry.py"
-            version = get_version(version_path, args.token, args.verbose)
+            version = get_version(strategy.version_path(file_path), args.token, args.verbose)
             print(f"    First version: {version}")
         else:
             print("[4] Skipped (not found in source).")
 
-        results[fw_name] = (supported, file_path, version, docs, vllm_registry_info)
+        results[fw_name] = (supported, file_path, version, docs, extra, strategy)
         print()
 
     # Final combined summary.
@@ -180,21 +146,12 @@ def main():
     print(f"  Model        : {args.model_id}")
     print(f"  Architecture : {arch}")
     for fw_name in frameworks:
-        supported, file_path, version, docs, vllm_info = results[fw_name]
-        label = config.FRAMEWORKS[fw_name]["label"]
-        line = f"  {label:6} supported : {'YES' if supported else 'NO'}"
+        supported, file_path, version, docs, extra, strategy = results[fw_name]
+        line = f"  {strategy.label:6} supported : {'YES' if supported else 'NO'}"
         if supported:
             line += f"  | since {version} | {file_path}"
         print(line)
-        # vLLM: show extra registry info
-        if fw_name == "vllm" and vllm_info:
-            status = vllm_info["status"]
-            if status == "previously_supported":
-                print(f"         NOTE: removed after v{vllm_info['last_version']}")
-            elif status == "oot_plugin":
-                print(f"         NOTE: requires plugin {vllm_info['plugin_url']}")
-            elif status == "supported":
-                print(f"         Category: {vllm_info['category']}")
+        strategy.format_summary_extra(extra)
     print("\nNote: GitHub source is the authoritative signal for both frameworks.")
     print("The 'since version' is approximated from the implementation file's first")
     print("commit date and may be off by a release or two; it needs GITHUB_TOKEN")
@@ -214,7 +171,7 @@ def _print_refresh_notes(freshness, threads, verbose=False):
         t.join(timeout=max(0.0, deadline - time.monotonic()))
     notes = []
     for fw_name, info in sorted(freshness.items()):
-        label = config.FRAMEWORKS[fw_name]["label"]
+        label = STRATEGIES[fw_name].label
         if "error" in info:
             notes.append(f"{label}: checkout refresh failed ({info['error']}); "
                          f"results reflect the checkout as-is.")

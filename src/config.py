@@ -2,23 +2,6 @@
 
 import os
 
-FRAMEWORKS = {
-    "sglang": {
-        "label": "SGLang",
-        "repo": "sgl-project/sglang",
-        "branch": "main",
-        "models_dir": "python/sglang/srt/models",
-        "docs": "https://docs.sglang.io/docs/supported-models",
-    },
-    "vllm": {
-        "label": "vLLM",
-        "repo": "vllm-project/vllm",
-        "branch": "main",
-        "models_dir": "vllm/model_executor/models",
-        "docs": "https://docs.vllm.ai/en/stable/models/supported_models/",
-    },
-}
-
 # vLLM registry.py dictionary names -> human-readable category labels.
 _VLLM_REGISTRY_PATH = "vllm/model_executor/models/registry.py"
 _VLLM_CATEGORY_MAP = {
@@ -43,32 +26,33 @@ BROWSER_UA = {
 }
 
 # Module-level globals describing the currently active framework, set by
-# set_active() from FRAMEWORKS in main(). Referenced dynamically (config.X)
+# set_active() from a strategy instance. Referenced dynamically (config.X)
 # so updates are visible to every module.
 REPO = None
 API = None
 RAW = None
 MODELS_DIR = None
 DOCS_URL = None
-NAME = None  # human label, e.g. "SGLang"
-LOCAL_DIR = None  # local checkout path; when set, no GitHub API calls are made
+NAME = None
+BRANCH = None
+LOCAL_DIR = None
 
 
-def set_active(fw_name, local_dir=None):
-    """Initialise the active-framework globals from FRAMEWORKS[fw_name].
+def set_active(strategy, local_dir=None):
+    """Initialise the active-framework globals from a strategy instance.
 
     If local_dir is provided it is treated as a local checkout of the framework
     repository; all source reads (models dir, registry.py, version history) are
     served from disk via git, and no GitHub API requests are made.
     """
-    global REPO, API, RAW, MODELS_DIR, DOCS_URL, NAME, LOCAL_DIR
-    fw = FRAMEWORKS[fw_name]
-    REPO = fw["repo"]
+    global REPO, API, RAW, MODELS_DIR, DOCS_URL, NAME, BRANCH, LOCAL_DIR
+    REPO = strategy.repo
     API = f"https://api.github.com/repos/{REPO}"
-    RAW = f"https://raw.githubusercontent.com/{REPO}/{fw['branch']}"
-    MODELS_DIR = fw["models_dir"]
-    DOCS_URL = fw["docs"]
-    NAME = fw["label"]
+    RAW = f"https://raw.githubusercontent.com/{REPO}/{strategy.branch}"
+    MODELS_DIR = strategy.models_dir
+    DOCS_URL = strategy.docs_url
+    NAME = strategy.label
+    BRANCH = strategy.branch
     LOCAL_DIR = os.path.expanduser(local_dir) if local_dir else None
 
 

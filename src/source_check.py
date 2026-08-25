@@ -54,7 +54,7 @@ def _list_model_files(verbose=False):
         print("  [github] Contents API unavailable; scraping tree page.")
     turl = (
         f"https://github.com/{config.REPO}/tree/"
-        f"{config.FRAMEWORKS[config.NAME.lower()]['branch']}/{config.MODELS_DIR}"
+        f"{config.BRANCH}/{config.MODELS_DIR}"
     )
     try:
         body, _ = _get(turl, ua=config.BROWSER_UA)

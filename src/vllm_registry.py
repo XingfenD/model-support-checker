@@ -86,11 +86,11 @@ def _parse_simple_dict(source, dict_name):
     return result
 
 
-def fetch_vllm_registry(ref=None, verbose=False):
+def fetch_vllm_registry(ref=None, repo=None, verbose=False):
     """Fetch vLLM registry.py source.
 
     In local mode (config.LOCAL_DIR set) the file is read from disk; otherwise
-    it is fetched from the GitHub raw CDN. `ref` is ignored in local mode.
+    it is fetched from the GitHub raw CDN. `ref` and `repo` are ignored in local mode.
     """
     if config.LOCAL_DIR:
         p = os.path.join(config.LOCAL_DIR, config._VLLM_REGISTRY_PATH)
@@ -105,8 +105,10 @@ def fetch_vllm_registry(ref=None, verbose=False):
             raise RuntimeError(f"Empty local registry.py at {p}")
         return body
 
-    ref = ref or config.FRAMEWORKS["vllm"]["branch"]
-    repo = config.FRAMEWORKS["vllm"]["repo"]
+    from .strategy import STRATEGIES
+    vllm = STRATEGIES["vllm"]
+    ref = ref or vllm.branch
+    repo = repo or vllm.repo
     url = f"https://raw.githubusercontent.com/{repo}/{ref}/{config._VLLM_REGISTRY_PATH}"
     if verbose:
         print(f"  [registry] fetching {url}")

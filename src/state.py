@@ -12,6 +12,7 @@ import sys
 import threading
 
 from . import config
+from .framework_strategies import STRATEGIES
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_DIR = os.path.join(ROOT, ".state")
@@ -92,11 +93,11 @@ def _clone(url, target):
 
 
 def _validate_checkout(path, fw_name):
-    models_dir = config.FRAMEWORKS[fw_name]["models_dir"]
-    if not os.path.isfile(os.path.join(path, models_dir, "__init__.py")):
+    strategy = STRATEGIES[fw_name]
+    if not os.path.isfile(os.path.join(path, strategy.models_dir, "__init__.py")):
         print(
-            f"  WARNING: {models_dir} not found under {path}; "
-            f"is this really a {config.FRAMEWORKS[fw_name]['label']} checkout?"
+            f"  WARNING: {strategy.models_dir} not found under {path}; "
+            f"is this really a {strategy.label} checkout?"
         )
 
 
@@ -119,12 +120,12 @@ def ensure_setup(mode, args):
                 sglang_path = raw or None
         if not vllm_path:
             vllm_path = _clone(
-                f"https://github.com/{config.FRAMEWORKS['vllm']['repo']}",
+                f"https://github.com/{STRATEGIES['vllm'].repo}",
                 os.path.join(REPOS_DIR, "vllm"),
             )
         if not sglang_path:
             sglang_path = _clone(
-                f"https://github.com/{config.FRAMEWORKS['sglang']['repo']}",
+                f"https://github.com/{STRATEGIES['sglang'].repo}",
                 os.path.join(REPOS_DIR, "sglang"),
             )
         st["vllm_path"] = os.path.abspath(os.path.expanduser(vllm_path))
