@@ -44,6 +44,7 @@ Notes:
 - Local clones are full clones (`--depth 1` breaks version detection).
 - The GitHub token is NEVER written to `.state/`; in token mode export `GITHUB_TOKEN` per run.
 - Re-run `--setup <mode>` anytime to switch modes; `--reset-state` forgets it (cloned repos are kept and reused).
+- Each run in local mode refreshes checkouts in the background (`git fetch`) and reports staleness or failures at the end — never blocking the main check.
 
 ## Methodology
 
@@ -88,7 +89,7 @@ Notes:
 - **Checking a model before setup** — without `.state/state.json` the tool refuses to run and prints the `--setup` commands. Ask the user which mode they want first.
 - **Token mode without `GITHUB_TOKEN`** — code search returns 403 for anonymous requests, so a "NO" result is best-effort and not definitive. Prefer local mode.
 - **Using a shallow git clone for local mode** — version detection needs full git history; use `--setup local` so it clones correctly.
-- **Stale local checkouts** — answers reflect the clone's HEAD; `git -C .state/repos/<fw> pull` occasionally.
+- **Stale local checkouts** — each run refreshes in the background and prints a note at the end if the checkout is behind; pull when warned.
 - **Expecting exact version numbers** — the "since version" is approximated from the file's earliest commit and may be off by one release.
 - **Forgetting `--no-docs`** when docs pages are JS-rendered or unreachable.
 

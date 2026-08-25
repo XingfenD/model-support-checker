@@ -17,6 +17,7 @@ Usage:
 import argparse
 import os
 import sys
+import time
 
 from . import config, state
 from .architecture import get_architecture
@@ -28,6 +29,9 @@ from .vllm_registry import (
     fetch_vllm_registry,
     parse_vllm_registry,
 )
+
+# Max seconds to wait for background checkout refreshes before exiting.
+_REFRESH_JOIN_SECONDS = 15
 
 
 def main():
@@ -86,13 +90,23 @@ def main():
     if not args.model_id:
         ap.error("model_id is required (e.g. Qwen/Qwen3.6-35B-A3B)")
 
+    frameworks = list(config.FRAMEWORKS) if args.framework == "both" else [args.framework]
+
+    # Local mode: refresh checkouts in the background while checking runs;
+    # failures/staleness are only reported at the very end, never blocking.
+    local_paths = {}
+    for fw_name in frameworks:
+        lp = sglang_path if fw_name == "sglang" else vllm_path
+        if lp and os.path.isdir(os.path.join(lp, ".git")):
+            local_paths[fw_name] = lp
+    freshness, refresh_threads = state.start_refresh(local_paths)
+
     # Step 1 (framework-independent): architecture name.
     archs, src = get_architecture(args.model_id, args.source)
     arch = archs[0]
     print(f"Model: {args.model_id}")
     print(f"[1] Architecture(s): {', '.join(archs)}  (source: {src})\n")
 
-    frameworks = list(config.FRAMEWORKS) if args.framework == "both" else [args.framework]
     results = {}
 
     for fw_name in frameworks:
@@ -185,6 +199,34 @@ def main():
     print("The 'since version' is approximated from the implementation file's first")
     print("commit date and may be off by a release or two; it needs GITHUB_TOKEN")
     print("on rate-limited IPs.")
+
+    _print_refresh_notes(freshness, refresh_threads, args.verbose)
+
+
+def _print_refresh_notes(freshness, threads, verbose=False):
+    """Report background checkout refresh results after the main flow.
+
+    Waits at most _REFRESH_JOIN_SECONDS total so a slow fetch never blocks
+    the exit for long; unfinished workers are simply not reported.
+    """
+    deadline = time.monotonic() + _REFRESH_JOIN_SECONDS
+    for t in threads:
+        t.join(timeout=max(0.0, deadline - time.monotonic()))
+    notes = []
+    for fw_name, info in sorted(freshness.items()):
+        label = config.FRAMEWORKS[fw_name]["label"]
+        if "error" in info:
+            notes.append(f"{label}: checkout refresh failed ({info['error']}); "
+                         f"results reflect the checkout as-is.")
+        elif info.get("behind"):
+            notes.append(f"{label}: checkout is {info['behind']} commit(s) behind "
+                         f"its upstream — update with: git -C {info['path']} pull")
+        elif verbose and not info.get("no_upstream"):
+            notes.append(f"{label}: checkout is up to date.")
+    if notes:
+        print("\n=== Checkout freshness ===")
+        for n in notes:
+            print(f"  NOTE: {n}")
 
 
 if __name__ == "__main__":

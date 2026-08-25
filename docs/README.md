@@ -34,6 +34,9 @@ Notes:
   `GITHUB_TOKEN` per run.
 - Re-run `--setup <mode>` anytime to switch modes; explicit `--vllm-path` /
   `--sglang-path` / `--token` flags override the saved state for that run.
+- Each run in local mode refreshes checkouts in the background (`git fetch`)
+  and reports staleness or failures at the end — never blocking the main
+  check.
 
 ## Methodology
 
