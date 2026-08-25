@@ -4,7 +4,7 @@ import json
 import urllib.error
 import urllib.request
 
-from .config import UA
+UA = {"User-Agent": "model-support-check/1.0"}
 
 
 def _get(url, headers=None, timeout=25, ua=None):

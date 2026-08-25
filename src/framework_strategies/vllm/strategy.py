@@ -1,11 +1,15 @@
 """vLLM strategy: registry.py parsing, version path, summary formatting."""
 
-from ..vllm_registry import (
+from typing import Optional, Tuple
+
+from ...check import check_support as _check_support
+from ...context import Context
+from .registry import (
     check_vllm_registry,
     fetch_vllm_registry,
     parse_vllm_registry,
 )
-from .base import FrameworkStrategy
+from ..base import FrameworkStrategy
 
 
 class VllmStrategy(FrameworkStrategy):
@@ -16,9 +20,16 @@ class VllmStrategy(FrameworkStrategy):
     models_dir = "vllm/model_executor/models"
     docs_url = "https://docs.vllm.ai/en/stable/models/supported_models/"
 
-    def extra_checks(self, arch, token, verbose, ref=None):
+    def check_support(
+        self, arch: str, ctx: Context, token: Optional[str] = None, verbose: bool = False
+    ) -> Tuple[bool, Optional[str]]:
+        """Check support via source check (same as base)."""
+        return _check_support(arch, ctx, token, verbose)
+
+    def extra_checks(self, arch: str, ctx: Context, token: Optional[str], verbose: bool, ref: Optional[str] = None):
+        """Parse registry.py for detailed vLLM model info."""
         try:
-            reg_source = fetch_vllm_registry(ref=ref or self.branch, verbose=verbose)
+            reg_source = fetch_vllm_registry(ctx=ctx, ref=ref or self.branch, verbose=verbose)
             reg_supported, reg_previously, reg_oot = parse_vllm_registry(
                 reg_source, verbose=verbose
             )
@@ -41,10 +52,11 @@ class VllmStrategy(FrameworkStrategy):
                 print(f"    [registry] skipped: {e}")
             return None
 
-    def version_path(self, file_path):
+    def version_path(self, file_path: Optional[str]) -> Optional[str]:
+        """Prefer registry.py for version detection if no file found."""
         return file_path or f"{self.models_dir}/registry.py"
 
-    def format_summary_extra(self, info):
+    def format_summary_extra(self, info) -> None:
         if not info:
             return
         status = info["status"]

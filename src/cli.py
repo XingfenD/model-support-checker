@@ -2,11 +2,6 @@
 """Check whether a HuggingFace / ModelScope model is supported by SGLang or vLLM,
 and since which version.
 
-This module is the CLI entry point. The actual work is split across focused
-modules: architecture (step 1), docs (step 2), source_check (step 3),
-version (step 4), and vllm_registry (vLLM-specific). See each module for the
-methodology details.
-
 Usage:
   python3 main.py --setup local                 # first run: clone vLLM+SGLang into .state/repos/ (recommended)
   python3 main.py --setup token                 # first run: use GitHub API (GITHUB_TOKEN per run)
@@ -19,11 +14,9 @@ import os
 import sys
 import time
 
-from . import config, state
+from . import state
 from .architecture import get_architecture
 from .framework_strategies import STRATEGIES
-from .source_check import check_github
-from .version import get_version
 
 # Max seconds to wait for background checkout refreshes before exiting.
 _REFRESH_JOIN_SECONDS = 15
@@ -107,20 +100,20 @@ def main():
     for fw_name in frameworks:
         local_path = sglang_path if fw_name == "sglang" else vllm_path
         strategy = STRATEGIES[fw_name]
-        strategy.activate(local_path)
+        ctx = strategy.make_context(local_path)
 
-        print(f"========== {config.NAME} ==========")
-        if config.LOCAL_DIR:
-            print(f"  (using local checkout: {config.LOCAL_DIR})")
+        print(f"========== {strategy.label} ==========")
+        if ctx.is_local:
+            print(f"  (using local checkout: {ctx.local_dir})")
 
         # Step 3 (authoritative)
         print("[3] GitHub source check (authoritative)...")
-        supported, file_path = check_github(arch, args.token, args.verbose)
+        supported, file_path = strategy.check_support(arch, ctx, args.token, args.verbose)
         print(f"    Supported in source: {'YES' if supported else 'NO'}"
               + (f"  ({file_path})" if file_path else ""))
 
         # Framework-specific extra checks (e.g. vLLM registry)
-        extra = strategy.extra_checks(arch, args.token, args.verbose, ref=args.vllm_ref)
+        extra = strategy.extra_checks(arch, ctx, args.token, args.verbose, ref=args.vllm_ref)
 
         # Step 2 (docs, supplementary)
         docs = "skipped"
@@ -132,8 +125,8 @@ def main():
         # Step 4 (version)
         version = None
         if supported:
-            print(f"[4] Determining first supporting {config.NAME} version...")
-            version = get_version(strategy.version_path(file_path), args.token, args.verbose)
+            print(f"[4] Determining first supporting {strategy.label} version...")
+            version = strategy.get_version(strategy.version_path(file_path), ctx, args.token, args.verbose)
             print(f"    First version: {version}")
         else:
             print("[4] Skipped (not found in source).")
