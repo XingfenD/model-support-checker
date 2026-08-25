@@ -3,6 +3,38 @@
 Check whether a HuggingFace / ModelScope model is supported by **SGLang** or
 **vLLM**, and since which version.
 
+## Setup (one-time)
+
+The tool is **stateful**: your access mode is persisted in `.state/state.json`
+(gitignored), so later runs need no flags or tokens.
+
+On first run you choose between two access modes — **local clone is recommended**:
+
+| | Local clone (recommended) | GitHub PAT |
+|---|---|---|
+| Result quality | Definitive (files grepped on disk) | Best-effort without token; code search 403s anonymously |
+| Rate limits | None | Yes — can break batch/version checks |
+| Repeat checks | Fast (disk reads) | Slower (GitHub API) |
+| Works offline | Yes, after initial clone | No |
+| Cost | ~1 GB+ disk (vLLM full history needed) | None |
+| Freshness | Stale until `git pull` | Always current |
+
+```bash
+python3 main.py --setup local                                  # clone vLLM+SGLang into .state/repos/
+python3 main.py --setup local --vllm-path P1 --sglang-path P2  # reuse existing checkouts
+python3 main.py --setup token                                  # GitHub API mode
+
+python3 main.py --reset-state   # forget setup (cloned repos are kept and reused)
+```
+
+Notes:
+
+- Local clones are full clones (`--depth 1` breaks version detection).
+- The GitHub token is NEVER written to `.state/`; in token mode export
+  `GITHUB_TOKEN` per run.
+- Re-run `--setup <mode>` anytime to switch modes; explicit `--vllm-path` /
+  `--sglang-path` / `--token` flags override the saved state for that run.
+
 ## Methodology
 
 For each framework the checker runs four framework-agnostic steps:
@@ -29,50 +61,52 @@ definitive. Step 4 also needs a token on rate-limited IPs.
 
 ### Local checkouts (no GitHub API)
 
-To avoid GitHub API rate limits entirely, point the tool at local clones of the
-framework repositories. In local mode all source reads (models directory,
+Local mode is the recommended setup (`--setup local` clones both repos into
+`.state/repos/` automatically). All source reads (models directory,
 `registry.py`, and version history) are served from disk via `git`, and **no
 GitHub API requests are made** — only the architecture lookup (step 1) and the
 docs check (step 2) still touch the network.
 
 ```bash
-# Use local clones (no GITHUB_TOKEN needed for source/registry/version)
+# Override saved paths for a single run (no GITHUB_TOKEN needed for source/registry/version)
 python3 main.py --framework vllm   --vllm-path   /path/to/vllm   deepseek-ai/DeepSeek-V3
 python3 main.py --framework sglang --sglang-path /path/to/sglang Qwen/Qwen3.6-35B-A3B
 ```
 
 `--vllm-ref` is ignored when `--vllm-path` is given. The local path must be a
 git checkout of the framework repo (so `git log`/`git tag` are available for
-version detection).
+version detection). Keep checkouts fresh with an occasional `git pull`.
 
 No third-party dependencies — standard library only.
 
 ## Usage
 
 ```bash
-# Check a single framework
-GITHUB_TOKEN=xxx python3 main.py --framework sglang Qwen/Qwen3.6-35B-A3B
-GITHUB_TOKEN=xxx python3 main.py --framework vllm deepseek-ai/DeepSeek-V3
+# After setup, just pass a model id
+python3 main.py --framework sglang Qwen/Qwen3.6-35B-A3B
+python3 main.py --framework vllm deepseek-ai/DeepSeek-V3
 
 # Check both frameworks at once (default)
-GITHUB_TOKEN=xxx python3 main.py --framework both meta-llama/Llama-3.1-8B
+python3 main.py meta-llama/Llama-3.1-8B
 
-# Best-effort, no token (results may be incomplete)
-python3 main.py --framework vllm meta-llama/Llama-3.1-8B
+# Token mode: GITHUB_TOKEN per run (never stored)
+GITHUB_TOKEN=xxx python3 main.py meta-llama/Llama-3.1-8B
 ```
 
 ### Options
 
 | Flag            | Description                                                        |
 | --------------- | ------------------------------------------------------------------ |
-| `model_id`      | HuggingFace or ModelScope model id (positional, required).         |
+| `model_id`      | HuggingFace or ModelScope model id (positional; required except with `--setup`/`--reset-state`). |
+| `--setup`       | One-time setup: `local` (clone repos into `.state/repos/`, recommended) or `token`; persists to `.state/state.json`. |
+| `--reset-state` | Forget saved setup state (cloned repos kept).                      |
 | `--framework`   | `sglang`, `vllm`, or `both` (default: `both`).                     |
 | `--source`      | `auto`, `hf`, or `modelscope` for reading `config.json`.           |
-| `--token`       | GitHub token (or set `GITHUB_TOKEN` env).                          |
+| `--token`       | GitHub token (or set `GITHUB_TOKEN` env); overrides saved state for this run. |
 | `--no-docs`     | Skip the docs check.                                               |
 | `--vllm-ref`    | vLLM git ref (branch/tag) for the registry check (default: `main`).|
-| `--vllm-path`   | Local vllm repo checkout; skip GitHub API for source/registry/ver. |
-| `--sglang-path` | Local sglang repo checkout; skip GitHub API for source/ver.        |
+| `--vllm-path`   | Local vllm repo checkout; overrides saved path for this run.       |
+| `--sglang-path` | Local sglang repo checkout; overrides saved path for this run.     |
 | `-v, --verbose` | Verbose output.                                                    |
 
 ## License

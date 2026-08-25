@@ -8,16 +8,17 @@ version (step 4), and vllm_registry (vLLM-specific). See each module for the
 methodology details.
 
 Usage:
+  python3 main.py --setup local                 # first run: clone vLLM+SGLang into .state/repos/ (recommended)
+  python3 main.py --setup token                 # first run: use GitHub API (GITHUB_TOKEN per run)
   GITHUB_TOKEN=xxx python3 main.py --framework sglang Qwen/Qwen3.6-35B-A3B
-  GITHUB_TOKEN=xxx python3 main.py --framework vllm deepseek-ai/DeepSeek-V3
-  python3 main.py --framework vllm meta-llama/Llama-3.1-8B   # best-effort
+  python3 main.py --framework vllm deepseek-ai/DeepSeek-V3   # after setup
 """
 
 import argparse
 import os
 import sys
 
-from . import config
+from . import config, state
 from .architecture import get_architecture
 from .docs import check_docs
 from .source_check import check_github
@@ -31,7 +32,7 @@ from .vllm_registry import (
 
 def main():
     ap = argparse.ArgumentParser(description="Check SGLang/vLLM model support.")
-    ap.add_argument("model_id", help="e.g. Qwen/Qwen3.6-35B-A3B")
+    ap.add_argument("model_id", nargs="?", help="e.g. Qwen/Qwen3.6-35B-A3B")
     ap.add_argument("--framework", choices=["sglang", "vllm", "both"], default="both",
                     help="which framework to check (default: both)")
     ap.add_argument("--source", choices=["auto", "hf", "modelscope"],
@@ -45,8 +46,45 @@ def main():
                     help="local vllm repo checkout path (skip GitHub API)")
     ap.add_argument("--sglang-path", default=None,
                     help="local sglang repo checkout path (skip GitHub API)")
+    ap.add_argument("--setup", choices=["local", "token"], default=None,
+                    help="first-run setup: 'local' clones vLLM+SGLang (recommended), "
+                         "'token' uses the GitHub API. Saved to .state/state.json.")
+    ap.add_argument("--reset-state", action="store_true",
+                    help="forget saved setup state")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+
+    if args.reset_state:
+        state.reset()
+        if not args.setup:
+            return
+    if args.setup:
+        state.ensure_setup(args.setup, args)
+        return
+
+    # Resolve setup state: first run asks the user (TTY menu) or tells the
+    # caller to run --setup.
+    st = state.load()
+    if st is None:
+        if sys.stdin.isatty():
+            state.ensure_setup(state.first_run_menu(), args)
+            st = state.load()
+        else:
+            raise RuntimeError(
+                "First run: no setup found (.state/state.json missing). Ask the "
+                "user to choose, then run one of:\n"
+                "  python3 main.py --setup local                 # recommended\n"
+                "  python3 main.py --setup local --vllm-path P1 --sglang-path P2\n"
+                "  python3 main.py --setup token                 # needs GITHUB_TOKEN"
+            )
+    if st["mode"] == "token" and not args.token and not os.environ.get("GITHUB_TOKEN"):
+        print("NOTE: token mode but no GITHUB_TOKEN; results are best-effort.\n")
+
+    vllm_path = args.vllm_path or st.get("vllm_path")
+    sglang_path = args.sglang_path or st.get("sglang_path")
+
+    if not args.model_id:
+        ap.error("model_id is required (e.g. Qwen/Qwen3.6-35B-A3B)")
 
     # Step 1 (framework-independent): architecture name.
     archs, src = get_architecture(args.model_id, args.source)
@@ -58,7 +96,7 @@ def main():
     results = {}
 
     for fw_name in frameworks:
-        local_path = args.sglang_path if fw_name == "sglang" else args.vllm_path
+        local_path = sglang_path if fw_name == "sglang" else vllm_path
         config.set_active(fw_name, local_path)
 
         print(f"========== {config.NAME} ==========")
