@@ -48,6 +48,8 @@ def ensure_setup(mode, args):
     if mode == "local":
         vllm_path = args.vllm_path
         sglang_path = args.sglang_path
+        vllm_ascend_path = getattr(args, "vllm_ascend_path", None)
+        
         if sys.stdin.isatty():
             if not vllm_path:
                 raw = input(
@@ -59,14 +61,26 @@ def ensure_setup(mode, args):
                     f"SGLang checkout path [Enter = clone into {REPOS_DIR}/sglang]: "
                 ).strip()
                 sglang_path = raw or None
+            if not vllm_ascend_path:
+                raw = input(
+                    f"vLLM-Ascend checkout path [Enter = clone into {REPOS_DIR}/vllm-ascend]: "
+                ).strip()
+                vllm_ascend_path = raw or None
+        
         if not vllm_path:
             vllm_path = clone(get_clone_url("vllm"), get_default_clone_path("vllm"))
         if not sglang_path:
             sglang_path = clone(get_clone_url("sglang"), get_default_clone_path("sglang"))
+        if not vllm_ascend_path:
+            vllm_ascend_path = clone(get_clone_url("vllm-ascend"), get_default_clone_path("vllm-ascend"))
+        
         st["vllm_path"] = os.path.abspath(os.path.expanduser(vllm_path))
         st["sglang_path"] = os.path.abspath(os.path.expanduser(sglang_path))
+        st["vllm_ascend_path"] = os.path.abspath(os.path.expanduser(vllm_ascend_path))
+        
         validate_checkout(st["vllm_path"], "vllm")
         validate_checkout(st["sglang_path"], "sglang")
+        validate_checkout(st["vllm_ascend_path"], "vllm-ascend")
     elif mode == "token":
         if not args.token and not os.environ.get("GITHUB_TOKEN"):
             print(

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Check whether a HuggingFace / ModelScope model is supported by SGLang or vLLM,
+"""Check whether a HuggingFace / ModelScope model is supported by SGLang, vLLM, or vLLM-Ascend,
 and since which version.
 
 Usage:
-  python3 main.py --setup local                 # first run: clone vLLM+SGLang into .state/repos/ (recommended)
+  python3 main.py --setup local                 # first run: clone repos into .state/repos/ (recommended)
   python3 main.py --setup token                 # first run: use GitHub API (GITHUB_TOKEN per run)
   GITHUB_TOKEN=xxx python3 main.py --framework sglang Qwen/Qwen3.6-35B-A3B
   python3 main.py --framework vllm deepseek-ai/DeepSeek-V3   # after setup
+  python3 main.py --framework vllm-ascend deepseek-ai/DeepSeek-V3
 """
 
 import argparse
@@ -21,12 +22,15 @@ from .framework_strategies import STRATEGIES
 # Max seconds to wait for background checkout refreshes before exiting.
 _REFRESH_JOIN_SECONDS = 15
 
+# Framework names that can be used with --framework
+FRAMEWORK_CHOICES = ["sglang", "vllm", "vllm-ascend", "all"]
+
 
 def main():
-    ap = argparse.ArgumentParser(description="Check SGLang/vLLM model support.")
+    ap = argparse.ArgumentParser(description="Check SGLang/vLLM/vLLM-Ascend model support.")
     ap.add_argument("model_id", nargs="?", help="e.g. Qwen/Qwen3.6-35B-A3B")
-    ap.add_argument("--framework", choices=["sglang", "vllm", "both"], default="both",
-                    help="which framework to check (default: both)")
+    ap.add_argument("--framework", choices=FRAMEWORK_CHOICES, default="all",
+                    help="which framework to check (default: all)")
     ap.add_argument("--source", choices=["auto", "hf", "modelscope"],
                     default="auto", help="where to read config.json")
     ap.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"),
@@ -38,8 +42,10 @@ def main():
                     help="local vllm repo checkout path (skip GitHub API)")
     ap.add_argument("--sglang-path", default=None,
                     help="local sglang repo checkout path (skip GitHub API)")
+    ap.add_argument("--vllm-ascend-path", default=None,
+                    help="local vllm-ascend repo checkout path (skip GitHub API)")
     ap.add_argument("--setup", choices=["local", "token"], default=None,
-                    help="first-run setup: 'local' clones vLLM+SGLang (recommended), "
+                    help="first-run setup: 'local' clones repos (recommended), "
                          "'token' uses the GitHub API. Saved to .state/state.json.")
     ap.add_argument("--reset-state", action="store_true",
                     help="forget saved setup state")
@@ -66,25 +72,37 @@ def main():
                 "First run: no setup found (.state/state.json missing). Ask the "
                 "user to choose, then run one of:\n"
                 "  python3 main.py --setup local                 # recommended\n"
-                "  python3 main.py --setup local --vllm-path P1 --sglang-path P2\n"
+                "  python3 main.py --setup local --vllm-path P1 --sglang-path P2 --vllm-ascend-path P3\n"
                 "  python3 main.py --setup token                 # needs GITHUB_TOKEN"
             )
     if st["mode"] == "token" and not args.token and not os.environ.get("GITHUB_TOKEN"):
         print("NOTE: token mode but no GITHUB_TOKEN; results are best-effort.\n")
 
-    vllm_path = args.vllm_path or st.get("vllm_path")
-    sglang_path = args.sglang_path or st.get("sglang_path")
+    # Build path mapping: framework name -> local path
+    paths = {
+        "vllm": args.vllm_path or st.get("vllm_path"),
+        "sglang": args.sglang_path or st.get("sglang_path"),
+        "vllm-ascend": args.vllm_ascend_path or st.get("vllm_ascend_path"),
+    }
+
+    # Warn if local mode but some frameworks are missing paths
+    if st["mode"] == "local":
+        missing = [name for name, path in paths.items() if not path]
+        if missing:
+            print(f"NOTE: local mode but missing paths for: {', '.join(missing)}")
+            print(f"      Run 'python3 main.py --setup local' to clone them, or use")
+            print(f"      '--framework' to check only configured frameworks.\n")
 
     if not args.model_id:
         ap.error("model_id is required (e.g. Qwen/Qwen3.6-35B-A3B)")
 
-    frameworks = list(STRATEGIES) if args.framework == "both" else [args.framework]
+    frameworks = list(STRATEGIES) if args.framework == "all" else [args.framework]
 
     # Local mode: refresh checkouts in the background while checking runs;
     # failures/staleness are only reported at the very end, never blocking.
     local_paths = {}
     for fw_name in frameworks:
-        lp = sglang_path if fw_name == "sglang" else vllm_path
+        lp = paths.get(fw_name)
         if lp and os.path.isdir(os.path.join(lp, ".git")):
             local_paths[fw_name] = lp
     freshness, refresh_threads = state.start_refresh(local_paths)
@@ -98,7 +116,7 @@ def main():
     results = {}
 
     for fw_name in frameworks:
-        local_path = sglang_path if fw_name == "sglang" else vllm_path
+        local_path = paths.get(fw_name)
         strategy = STRATEGIES[fw_name]
         ctx = strategy.make_context(local_path)
 
@@ -140,12 +158,12 @@ def main():
     print(f"  Architecture : {arch}")
     for fw_name in frameworks:
         supported, file_path, version, docs, extra, strategy = results[fw_name]
-        line = f"  {strategy.label:6} supported : {'YES' if supported else 'NO'}"
+        line = f"  {strategy.label:12} supported : {'YES' if supported else 'NO'}"
         if supported:
             line += f"  | since {version} | {file_path}"
         print(line)
         strategy.format_summary_extra(extra)
-    print("\nNote: GitHub source is the authoritative signal for both frameworks.")
+    print("\nNote: GitHub source is the authoritative signal for all frameworks.")
     print("The 'since version' is approximated from the implementation file's first")
     print("commit date and may be off by a release or two; it needs GITHUB_TOKEN")
     print("on rate-limited IPs.")

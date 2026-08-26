@@ -1,22 +1,22 @@
 ---
 name: model-support-checker
-description: Use when checking HuggingFace or ModelScope model support for SGLang or vLLM, finding the first supporting version, or diagnosing "model not supported" errors.
+description: Use when checking HuggingFace or ModelScope model support for SGLang, vLLM, or vLLM-Ascend, finding the first supporting version, or diagnosing "model not supported" errors.
 ---
 
 # Model Support Checker
 
 ## Overview
 
-Check whether a HuggingFace / ModelScope model is supported by **SGLang** or **vLLM**, and since which version. The checker runs four framework-agnostic steps and uses GitHub source as the authoritative signal.
+Check whether a HuggingFace / ModelScope model is supported by **SGLang**, **vLLM**, or **vLLM-Ascend**, and since which version. The checker runs four framework-agnostic steps and uses GitHub source as the authoritative signal.
 
 The tool is **stateful**: the access mode chosen during one-time setup is persisted in `.state/state.json` (gitignored), so later runs need no flags or tokens.
 
 ## When to Use
 
-- Before deploying a model, to confirm SGLang/vLLM compatibility.
+- Before deploying a model, to confirm SGLang/vLLM/vLLM-Ascend compatibility.
 - When a model fails to load and you suspect it is not yet implemented.
 - When comparing framework coverage for a new model release.
-- When you need to know the minimum required SGLang/vLLM version.
+- When you need to know the minimum required SGLang/vLLM/vLLM-Ascend version.
 
 ## First Run Setup (REQUIRED once)
 
@@ -34,9 +34,9 @@ If `.state/state.json` does not exist yet, **ask the user** which access mode th
 Then run exactly one of:
 
 ```bash
-python3 main.py --setup local                                  # clone vLLM+SGLang into .state/repos/
-python3 main.py --setup local --vllm-path P1 --sglang-path P2  # reuse existing checkouts
-python3 main.py --setup token                                  # GitHub API mode
+python3 main.py --setup local                                              # clone all repos into .state/repos/
+python3 main.py --setup local --vllm-path P1 --sglang-path P2 --vllm-ascend-path P3  # reuse existing checkouts
+python3 main.py --setup token                                              # GitHub API mode
 ```
 
 Notes:
@@ -52,6 +52,7 @@ Notes:
 2. **Docs** (supplementary) — grep the framework's supported-models page.
 3. **GitHub source** (authoritative) — search the framework's models directory for the architecture string.
    - For vLLM, also parse `registry.py` for category, module, class, and check `_PREVIOUSLY_SUPPORTED_MODELS` / `_OOT_SUPPORTED_MODELS`.
+   - For vLLM-Ascend, parse `__init__.py` for `ModelRegistry.register_model()` calls to extract module and class.
 4. **Version** — find the first release containing the implementation file (earliest commit → nearest release).
 
 ## Quick Reference
@@ -60,9 +61,10 @@ Notes:
 |------|---------|
 | First-run setup (local, recommended) | `python3 main.py --setup local` |
 | First-run setup (GitHub PAT) | `python3 main.py --setup token` |
-| Check both frameworks (after setup) | `python3 main.py meta-llama/Llama-3.1-8B` |
+| Check all frameworks (after setup) | `python3 main.py meta-llama/Llama-3.1-8B` |
 | Check one framework | `python3 main.py --framework vllm deepseek-ai/DeepSeek-V3` |
-| Override saved paths for one run | `python3 main.py --vllm-path /p --sglang-path /q <model>` |
+| Check vLLM-Ascend | `python3 main.py --framework vllm-ascend deepseek-ai/DeepSeek-V3` |
+| Override saved paths for one run | `python3 main.py --vllm-path /p --sglang-path /q --vllm-ascend-path /r <model>` |
 | Switch mode / reconfigure | `python3 main.py --setup local` or `--setup token` |
 | Forget setup state | `python3 main.py --reset-state` |
 | Skip docs check | `python3 main.py --no-docs <model_id>` |
@@ -75,13 +77,14 @@ Notes:
 | `model_id` | HuggingFace or ModelScope model id (positional; required except with `--setup`/`--reset-state`) |
 | `--setup` | `local` (clone repos into `.state/repos/`, recommended) or `token` (GitHub API); persists to `.state/state.json` |
 | `--reset-state` | Delete saved state (cloned repos kept) |
-| `--framework` | `sglang`, `vllm`, or `both` (default: `both`) |
+| `--framework` | `sglang`, `vllm`, `vllm-ascend`, or `all` (default: `all`) |
 | `--source` | `auto`, `hf`, or `modelscope` for reading `config.json` |
 | `--token` | GitHub token (or set `GITHUB_TOKEN` env; overrides saved mode paths only in that run) |
 | `--no-docs` | Skip the docs check |
 | `--vllm-ref` | vLLM git ref for registry check (default: `main`; ignored in local mode) |
 | `--vllm-path` | Local vLLM checkout; overrides the saved path for this run |
 | `--sglang-path` | Local SGLang checkout; overrides the saved path for this run |
+| `--vllm-ascend-path` | Local vLLM-Ascend checkout; overrides the saved path for this run |
 | `-v, --verbose` | Verbose output |
 
 ## Common Mistakes
