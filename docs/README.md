@@ -24,6 +24,7 @@ python3 main.py --setup local                                              # clo
 python3 main.py --setup local --vllm-path P1 --sglang-path P2 --vllm-ascend-path P3  # reuse existing checkouts
 python3 main.py --setup token                                              # GitHub API mode
 
+python3 main.py --doctor        # check setup state and local checkouts
 python3 main.py --reset-state   # forget setup (cloned repos are kept and reused)
 ```
 
@@ -107,6 +108,7 @@ GITHUB_TOKEN=xxx python3 main.py meta-llama/Llama-3.1-8B
 | `model_id`           | HuggingFace or ModelScope model id (positional; required except with `--setup`/`--reset-state`).  |
 | `--setup`            | One-time setup: `local` (clone repos into `.state/repos/`, recommended) or `token`; persists to `.state/state.json`. |
 | `--reset-state`      | Forget saved setup state (cloned repos kept).                                                     |
+| `--doctor`           | Check setup state and local checkouts, then exit.                                                 |
 | `--framework`        | `sglang`, `vllm`, `vllm-ascend`, or `all` (default: `all`).                                       |
 | `--source`           | `auto`, `hf`, or `modelscope` for reading `config.json`.                                          |
 | `--token`            | GitHub token (or set `GITHUB_TOKEN` env); overrides saved state for this run.                      |

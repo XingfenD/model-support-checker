@@ -5,6 +5,7 @@ and since which version.
 Usage:
   python3 main.py --setup local                 # first run: clone repos into .state/repos/ (recommended)
   python3 main.py --setup token                 # first run: use GitHub API (GITHUB_TOKEN per run)
+  python3 main.py --doctor                      # check setup state and local checkouts
   GITHUB_TOKEN=xxx python3 main.py --framework sglang Qwen/Qwen3.6-35B-A3B
   python3 main.py --framework vllm deepseek-ai/DeepSeek-V3   # after setup
   python3 main.py --framework vllm-ascend deepseek-ai/DeepSeek-V3
@@ -49,6 +50,8 @@ def main():
                          "'token' uses the GitHub API. Saved to .state/state.json.")
     ap.add_argument("--reset-state", action="store_true",
                     help="forget saved setup state")
+    ap.add_argument("--doctor", action="store_true",
+                    help="check setup state and exit")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
@@ -61,8 +64,13 @@ def main():
         return
 
     # Resolve setup state: first run asks the user (TTY menu) or tells the
-    # caller to run --setup.
+    # caller to run --setup. With --doctor we skip the interactive menu and
+    # just report whatever is (or isn't) on disk.
     st = state.load()
+    if st is None and args.doctor:
+        has_errors = state.print_report(state.doctor(st, args, framework=args.framework))
+        sys.exit(1 if has_errors else 0)
+
     if st is None:
         if sys.stdin.isatty():
             state.ensure_setup(state.first_run_menu(), args)
@@ -75,8 +83,20 @@ def main():
                 "  python3 main.py --setup local --vllm-path P1 --sglang-path P2 --vllm-ascend-path P3\n"
                 "  python3 main.py --setup token                 # needs GITHUB_TOKEN"
             )
-    if st["mode"] == "token" and not args.token and not os.environ.get("GITHUB_TOKEN"):
-        print("NOTE: token mode but no GITHUB_TOKEN; results are best-effort.\n")
+
+    # Doctor runs on every invocation so callers never need to manually ls/cat
+    # .state/. With --doctor we print the full report and exit; otherwise we
+    # only surface actionable problems.
+    issues = state.doctor(st, args, framework=args.framework)
+    if args.doctor:
+        has_errors = state.print_report(issues)
+        sys.exit(1 if has_errors else 0)
+
+    has_errors = state.print_report(issues)
+    if has_errors:
+        print("Please fix the setup issues above before checking a model.")
+        print("Run 'python3 main.py --doctor' for details, or 'python3 main.py --setup local' to reconfigure.\n")
+        sys.exit(1)
 
     # Build path mapping: framework name -> local path
     paths = {
@@ -84,14 +104,6 @@ def main():
         "sglang": args.sglang_path or st.get("sglang_path"),
         "vllm-ascend": args.vllm_ascend_path or st.get("vllm_ascend_path"),
     }
-
-    # Warn if local mode but some frameworks are missing paths
-    if st["mode"] == "local":
-        missing = [name for name, path in paths.items() if not path]
-        if missing:
-            print(f"NOTE: local mode but missing paths for: {', '.join(missing)}")
-            print(f"      Run 'python3 main.py --setup local' to clone them, or use")
-            print(f"      '--framework' to check only configured frameworks.\n")
 
     if not args.model_id:
         ap.error("model_id is required (e.g. Qwen/Qwen3.6-35B-A3B)")

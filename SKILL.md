@@ -46,6 +46,21 @@ Notes:
 - Re-run `--setup <mode>` anytime to switch modes; `--reset-state` forgets it (cloned repos are kept and reused).
 - Each run in local mode refreshes checkouts in the background (`git fetch`) and reports staleness or failures at the end — never blocking the main check.
 
+## State Health Check (`doctor`)
+
+Every invocation automatically runs an internal `doctor` that inspects `.state/state.json` and the configured local checkouts. You do not need to manually `ls` or `cat` `.state/`.
+
+- If the configuration is healthy, doctor prints `doctor: setup state looks healthy.` and proceeds.
+- If problems are found, doctor prints actionable `[ERROR]` / `[WARN]` lines and exits with code `1` before attempting any model check.
+- Use `python3 main.py --doctor` to inspect state without checking a model.
+- When `--framework <name>` is used, doctor only validates the requested framework, so a missing vLLM-Ascend checkout will not block a vLLM-only check.
+
+Doctor checks:
+
+1. `.state/state.json` exists and has a valid `mode` (`local` or `token`).
+2. In **token** mode: `GITHUB_TOKEN` is present (warns if missing).
+3. In **local** mode: each requested framework has a configured path, the path exists, it is a git repository, and it contains the expected `models_dir/__init__.py`.
+
 ## Methodology
 
 1. **Architecture** — read `architectures` from the model's `config.json` (HuggingFace first, ModelScope fallback).
@@ -68,6 +83,7 @@ Notes:
 | Switch mode / reconfigure | `python3 main.py --setup local` or `--setup token` |
 | Forget setup state | `python3 main.py --reset-state` |
 | Skip docs check | `python3 main.py --no-docs <model_id>` |
+| Check setup health | `python3 main.py --doctor` |
 | Verbose output | `python3 main.py -v <model_id>` |
 
 ## Important Flags
@@ -77,6 +93,7 @@ Notes:
 | `model_id` | HuggingFace or ModelScope model id (positional; required except with `--setup`/`--reset-state`) |
 | `--setup` | `local` (clone repos into `.state/repos/`, recommended) or `token` (GitHub API); persists to `.state/state.json` |
 | `--reset-state` | Delete saved state (cloned repos kept) |
+| `--doctor` | Check setup state and local checkouts, then exit |
 | `--framework` | `sglang`, `vllm`, `vllm-ascend`, or `all` (default: `all`) |
 | `--source` | `auto`, `hf`, or `modelscope` for reading `config.json` |
 | `--token` | GitHub token (or set `GITHUB_TOKEN` env; overrides saved mode paths only in that run) |
@@ -89,8 +106,8 @@ Notes:
 
 ## Common Mistakes
 
-- **Checking a model before setup** — without `.state/state.json` the tool refuses to run and prints the `--setup` commands. Ask the user which mode they want first.
-- **Token mode without `GITHUB_TOKEN`** — code search returns 403 for anonymous requests, so a "NO" result is best-effort and not definitive. Prefer local mode.
+- **Checking a model before setup** — without `.state/state.json` the tool refuses to run and prints the `--setup` commands. Run `python3 main.py --doctor` to confirm the current state, then ask the user which mode they want.
+- **Token mode without `GITHUB_TOKEN`** — code search returns 403 for anonymous requests, so a "NO" result is best-effort and not definitive. Prefer local mode; `python3 main.py --doctor` will warn if the token is missing.
 - **Using a shallow git clone for local mode** — version detection needs full git history; use `--setup local` so it clones correctly.
 - **Stale local checkouts** — each run refreshes in the background and prints a note at the end if the checkout is behind; pull when warned.
 - **Expecting exact version numbers** — the "since version" is approximated from the file's earliest commit and may be off by one release.
