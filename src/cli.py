@@ -84,19 +84,13 @@ def main():
                 "  python3 main.py --setup token                 # needs GITHUB_TOKEN"
             )
 
-    # Doctor runs on every invocation so callers never need to manually ls/cat
-    # .state/. With --doctor we print the full report and exit; otherwise we
-    # only surface actionable problems.
-    issues = state.doctor(st, args, framework=args.framework)
+    # The agent is expected to run `python3 main.py --doctor` explicitly
+    # before any model check (see SKILL.md workflow). When --doctor is passed
+    # directly, we inspect state and exit without touching a model.
     if args.doctor:
+        issues = state.doctor(st, args, framework=args.framework)
         has_errors = state.print_report(issues)
         sys.exit(1 if has_errors else 0)
-
-    has_errors = state.print_report(issues)
-    if has_errors:
-        print("Please fix the setup issues above before checking a model.")
-        print("Run 'python3 main.py --doctor' for details, or 'python3 main.py --setup local' to reconfigure.\n")
-        sys.exit(1)
 
     # Build path mapping: framework name -> local path
     paths = {

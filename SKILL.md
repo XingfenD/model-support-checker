@@ -59,7 +59,6 @@ Workflow:
 
 Notes:
 
-- Every invocation of `main.py` also runs doctor internally, but the agent should still call it explicitly first to surface problems before deciding how to proceed.
 - Use `python3 main.py --doctor` to inspect state without checking a model.
 - When `--framework <name>` is used, doctor only validates the requested framework, so a missing vLLM-Ascend checkout will not block a vLLM-only check.
 
