@@ -5,7 +5,7 @@ import json
 from .http_utils import _get, _get_json
 
 
-def get_architecture(model_id, source="auto"):
+def get_architecture(model_id, source="modelscope"):
     """Return (architectures: list[str], source_used: str)."""
     if source in ("auto", "hf"):
         url = f"https://huggingface.co/{model_id}/resolve/main/config.json"

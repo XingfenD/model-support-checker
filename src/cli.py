@@ -33,7 +33,7 @@ def main():
     ap.add_argument("--framework", choices=FRAMEWORK_CHOICES, default="all",
                     help="which framework to check (default: all)")
     ap.add_argument("--source", choices=["auto", "hf", "modelscope"],
-                    default="auto", help="where to read config.json")
+                    default="modelscope", help="where to read config.json")
     ap.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"),
                     help="GitHub token (or set GITHUB_TOKEN env)")
     ap.add_argument("--no-docs", action="store_true", help="skip docs check")
