@@ -48,10 +48,18 @@ Notes:
 
 ## State Health Check (`doctor`)
 
-Every invocation automatically runs an internal `doctor` that inspects `.state/state.json` and the configured local checkouts. You do not need to manually `ls` or `cat` `.state/`.
+**The agent MUST run `python3 main.py --doctor` BEFORE any model check.** Do not run `ls`, `cat`, or other manual inspection of `.state/`; the doctor command is the single source of truth for setup health.
 
-- If the configuration is healthy, doctor prints `doctor: setup state looks healthy.` and proceeds.
-- If problems are found, doctor prints actionable `[ERROR]` / `[WARN]` lines and exits with code `1` before attempting any model check.
+Workflow:
+
+1. Run `python3 main.py --doctor`.
+2. If doctor reports `[ERROR]` lines, stop and fix the setup first (run `python3 main.py --setup local` or provide the missing path). Never proceed to a model check while errors remain.
+3. If doctor reports only `[WARN]` lines, use judgment: warnings about a missing `__init__.py` may indicate an upstream repo restructure, but missing checkout paths are errors.
+4. Once doctor reports `doctor: setup state looks healthy.`, run the actual model check.
+
+Notes:
+
+- Every invocation of `main.py` also runs doctor internally, but the agent should still call it explicitly first to surface problems before deciding how to proceed.
 - Use `python3 main.py --doctor` to inspect state without checking a model.
 - When `--framework <name>` is used, doctor only validates the requested framework, so a missing vLLM-Ascend checkout will not block a vLLM-only check.
 
@@ -74,6 +82,7 @@ Doctor checks:
 
 | Task | Command |
 |------|---------|
+| Check setup health (run this first) | `python3 main.py --doctor` |
 | First-run setup (local, recommended) | `python3 main.py --setup local` |
 | First-run setup (GitHub PAT) | `python3 main.py --setup token` |
 | Check all frameworks (after setup) | `python3 main.py meta-llama/Llama-3.1-8B` |
@@ -83,7 +92,6 @@ Doctor checks:
 | Switch mode / reconfigure | `python3 main.py --setup local` or `--setup token` |
 | Forget setup state | `python3 main.py --reset-state` |
 | Skip docs check | `python3 main.py --no-docs <model_id>` |
-| Check setup health | `python3 main.py --doctor` |
 | Verbose output | `python3 main.py -v <model_id>` |
 
 ## Important Flags
@@ -106,6 +114,7 @@ Doctor checks:
 
 ## Common Mistakes
 
+- **Skipping `doctor` before a model check** — always run `python3 main.py --doctor` first. Do not inspect `.state/` manually with `ls` or `cat`; doctor is the intended interface.
 - **Checking a model before setup** — without `.state/state.json` the tool refuses to run and prints the `--setup` commands. Run `python3 main.py --doctor` to confirm the current state, then ask the user which mode they want.
 - **Token mode without `GITHUB_TOKEN`** — code search returns 403 for anonymous requests, so a "NO" result is best-effort and not definitive. Prefer local mode; `python3 main.py --doctor` will warn if the token is missing.
 - **Using a shallow git clone for local mode** — version detection needs full git history; use `--setup local` so it clones correctly.
