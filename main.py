@@ -7,6 +7,7 @@ Usage:
   GITHUB_TOKEN=xxx python3 main.py --framework sglang Qwen/Qwen3.6-35B-A3B
   python3 main.py --framework vllm deepseek-ai/DeepSeek-V3   # after setup
   python3 main.py --framework vllm-ascend deepseek-ai/DeepSeek-V3
+  python3 main.py --arch LlamaForCausalLM       # manual architecture
 """
 
 import sys

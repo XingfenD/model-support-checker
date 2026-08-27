@@ -18,7 +18,7 @@ def _get(url, headers=None, timeout=25, ua=None):
     except urllib.error.HTTPError as e:
         if e.code in (403, 429):
             raise RuntimeError(f"GitHub rate limit / forbidden ({e.code})")
-        if e.code == 404:
+        if e.code in (401, 404):
             return None, e.headers
         raise
 

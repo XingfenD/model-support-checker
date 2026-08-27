@@ -9,6 +9,7 @@ Usage:
   GITHUB_TOKEN=xxx python3 main.py --framework sglang Qwen/Qwen3.6-35B-A3B
   python3 main.py --framework vllm deepseek-ai/DeepSeek-V3   # after setup
   python3 main.py --framework vllm-ascend deepseek-ai/DeepSeek-V3
+  python3 main.py --arch LlamaForCausalLM       # manual architecture (skip config.json fetch)
 """
 
 import argparse
@@ -29,11 +30,14 @@ FRAMEWORK_CHOICES = ["sglang", "vllm", "vllm-ascend", "all"]
 
 def main():
     ap = argparse.ArgumentParser(description="Check SGLang/vLLM/vLLM-Ascend model support.")
-    ap.add_argument("model_id", nargs="?", help="e.g. Qwen/Qwen3.6-35B-A3B")
+    ap.add_argument("model_id", nargs="?", help="e.g. Qwen/Qwen3.6-35B-A3B (optional with --arch)")
     ap.add_argument("--framework", choices=FRAMEWORK_CHOICES, default="all",
                     help="which framework to check (default: all)")
     ap.add_argument("--source", choices=["auto", "hf", "modelscope"],
                     default="modelscope", help="where to read config.json")
+    ap.add_argument("--arch", default=None,
+                    help="manually specify architecture name(s), comma-separated "
+                         "(e.g. LlamaForCausalLM). Skips config.json fetch.")
     ap.add_argument("--token", default=os.environ.get("GITHUB_TOKEN"),
                     help="GitHub token (or set GITHUB_TOKEN env)")
     ap.add_argument("--no-docs", action="store_true", help="skip docs check")
@@ -99,8 +103,8 @@ def main():
         "vllm-ascend": args.vllm_ascend_path or st.get("vllm_ascend_path"),
     }
 
-    if not args.model_id:
-        ap.error("model_id is required (e.g. Qwen/Qwen3.6-35B-A3B)")
+    if not args.model_id and not args.arch:
+        ap.error("model_id is required (unless --arch is specified)")
 
     frameworks = list(STRATEGIES) if args.framework == "all" else [args.framework]
 
@@ -114,9 +118,11 @@ def main():
     freshness, refresh_threads = state.start_refresh(local_paths)
 
     # Step 1 (framework-independent): architecture name.
-    archs, src = get_architecture(args.model_id, args.source)
+    archs, src = get_architecture(args.model_id or "", args.source,
+                                  arch_override=args.arch)
     arch = archs[0]
-    print(f"Model: {args.model_id}")
+    model_display = args.model_id or "(manual)"
+    print(f"Model: {model_display}")
     print(f"[1] Architecture(s): {', '.join(archs)}  (source: {src})\n")
 
     results = {}
@@ -160,7 +166,7 @@ def main():
 
     # Final combined summary.
     print("=== Summary ===")
-    print(f"  Model        : {args.model_id}")
+    print(f"  Model        : {model_display}")
     print(f"  Architecture : {arch}")
     for fw_name in frameworks:
         supported, file_path, version, docs, extra, strategy = results[fw_name]

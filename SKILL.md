@@ -5,123 +5,81 @@ description: Use when checking HuggingFace or ModelScope model support for SGLan
 
 # Model Support Checker
 
-## Overview
-
-Check whether a HuggingFace / ModelScope model is supported by **SGLang**, **vLLM**, or **vLLM-Ascend**, and since which version. The checker runs four framework-agnostic steps and uses GitHub source as the authoritative signal.
-
-The tool is **stateful**: the access mode chosen during one-time setup is persisted in `.state/state.json` (gitignored), so later runs need no flags or tokens.
-
-## When to Use
-
-- Before deploying a model, to confirm SGLang/vLLM/vLLM-Ascend compatibility.
-- When a model fails to load and you suspect it is not yet implemented.
-- When comparing framework coverage for a new model release.
-- When you need to know the minimum required SGLang/vLLM/vLLM-Ascend version.
-
-## First Run Setup (REQUIRED once)
-
-If `.state/state.json` does not exist yet, **ask the user** which access mode they want BEFORE any model check. Present both options with this comparison and **recommend the local clone**:
-
-| | Local clone (recommended) | GitHub PAT |
-|---|---|---|
-| Result quality | Definitive (files grepped on disk) | Best-effort without token; code search 403s anonymously |
-| Rate limits | None | Yes — can break batch/version checks |
-| Repeat checks | Fast (disk reads) | Slower (GitHub API) |
-| Works offline | Yes, after initial clone | No |
-| Cost | ~1 GB+ disk (vLLM full history needed) | None |
-| Freshness | Stale until `git pull` | Always current |
-
-Then run exactly one of:
-
-```bash
-python3 main.py --setup local                                              # clone all repos into .state/repos/
-python3 main.py --setup local --vllm-path P1 --sglang-path P2 --vllm-ascend-path P3  # reuse existing checkouts
-python3 main.py --setup token                                              # GitHub API mode
-```
-
-Notes:
-
-- Local clones are full clones (`--depth 1` breaks version detection).
-- The GitHub token is NEVER written to `.state/`; in token mode export `GITHUB_TOKEN` per run.
-- Re-run `--setup <mode>` anytime to switch modes; `--reset-state` forgets it (cloned repos are kept and reused).
-- Each run in local mode refreshes checkouts in the background (`git fetch`) and reports staleness or failures at the end — never blocking the main check.
-
-## State Health Check (`doctor`)
-
-**The agent MUST run `python3 main.py --doctor` BEFORE any model check.** Do not run `ls`, `cat`, or other manual inspection of `.state/`; the doctor command is the single source of truth for setup health.
-
-Workflow:
-
-1. Run `python3 main.py --doctor`.
-2. If doctor reports `[ERROR]` lines, stop and fix the setup first (run `python3 main.py --setup local` or provide the missing path). Never proceed to a model check while errors remain.
-3. If doctor reports only `[WARN]` lines, use judgment: warnings about a missing `__init__.py` may indicate an upstream repo restructure, but missing checkout paths are errors.
-4. Once doctor reports `doctor: setup state looks healthy.`, run the actual model check.
-
-Notes:
-
-- Use `python3 main.py --doctor` to inspect state without checking a model.
-- When `--framework <name>` is used, doctor only validates the requested framework, so a missing vLLM-Ascend checkout will not block a vLLM-only check.
-
-Doctor checks:
-
-1. `.state/state.json` exists and has a valid `mode` (`local` or `token`).
-2. In **token** mode: `GITHUB_TOKEN` is present (warns if missing).
-3. In **local** mode: each requested framework has a configured path, the path exists, it is a git repository, and it contains the expected `models_dir/__init__.py`.
+Check whether a HuggingFace / ModelScope model is supported by **SGLang**, **vLLM**, or **vLLM-Ascend**, and since which version.
 
 ## Methodology
 
-1. **Architecture** — read `architectures` from the model's `config.json` (HuggingFace first, ModelScope fallback).
+The authoritative signal: does the framework's **source code** contain an implementation for the model's architecture string? Docs are supplementary.
+
+1. **Architecture** — `architectures` from `config.json` (HF → ModelScope fallback). Override with `--arch`.
 2. **Docs** (supplementary) — grep the framework's supported-models page.
-3. **GitHub source** (authoritative) — search the framework's models directory for the architecture string.
-   - For vLLM, also parse `registry.py` for category, module, class, and check `_PREVIOUSLY_SUPPORTED_MODELS` / `_OOT_SUPPORTED_MODELS`.
-   - For vLLM-Ascend, parse `__init__.py` for `ModelRegistry.register_model()` calls to extract module and class.
-4. **Version** — find the first release containing the implementation file (earliest commit → nearest release).
+3. **Source** (authoritative) — search the models directory for the architecture string.
+4. **Version** — earliest commit on the implementation file → nearest release tag.
+
+The tool is stateful; mode persists in `.state/state.json`. Local clone (recommended) greps on disk. Token mode uses GitHub API.
+
+## Skill Workflow
+
+**Step 1 — Doctor.** `python3 main.py --doctor`. `[ERROR]` → fix first, stop. `[WARN]` → ignore, continue.
+
+**Step 2 — Setup (optional).** Only if no state exists. Recommend local: `python3 main.py --setup local`.
+
+**Step 3 — Resolve model ID.** Infer full `<org>/<model_name>` from user input, matching the hosting platform convention. Parse URLs or short names. Query the web if uncertain.
+
+**Step 4 — Run.**
+```bash
+python3 main.py [--framework <fw>] [--source <src>] [--arch <arch>] <model_id>
+```
+- All frameworks: `python3 main.py <model_id>`
+- One framework: `python3 main.py --framework vllm <model_id>`
+- Manual arch (no config.json needed): `python3 main.py --arch LlamaForCausalLM`
+- Arch + model: `python3 main.py --framework vllm --arch DeepseekV3ForCausalLM <model_id>`
+
+**Step 5 — Report.** Parse Summary. Report: YES/NO per framework, minimum version, file path, vLLM category/module/class.
+
+## Fallback Strategies
+
+### Fallback 1: config.json fetch fails
+
+Escalate in order:
+
+1. **Switch platform** — retry with `--source hf` (default is modelscope).
+2. **webfetch** — agent fetches `config.json` directly:
+   - HF: `https://huggingface.co/<org>/<model>/resolve/main/config.json`
+   - MS: `https://modelscope.cn/models/<org>/<model>/resolve/master/config.json`
+   Extract `architectures`, then: `python3 main.py --arch <ArchName> <model_id>`
+3. **Guide user** — if webfetch fails (private/gated), provide links for the user to read `architectures` from `config.json`:
+   - HF: `https://huggingface.co/<org>/<model>/blob/main/config.json`
+   - MS: `https://modelscope.cn/models/<org>/<model>/files`
+   Then run with `--arch`.
+
+### Fallback 2: Script cannot run
+
+Bypass the script; follow methodology manually:
+
+1. Get architecture (webfetch or ask user).
+2. Search framework GitHub repos for the architecture string:
+   - vLLM (`vllm-project/vllm`): `vllm/model_executor/models/`
+   - SGLang (`sgl-project/sglang`): `python/sglang/srt/models/`
+   - vLLM-Ascend (`vllm-project/vllm-ascend`): `vllm_ascend/models/`
+3. Check official supported-models docs.
+4. Earliest commit → nearest release tag for version.
+5. Report in script Summary format.
 
 ## Quick Reference
 
-| Task | Command |
-|------|---------|
-| Check setup health (run this first) | `python3 main.py --doctor` |
-| First-run setup (local, recommended) | `python3 main.py --setup local` |
-| First-run setup (GitHub PAT) | `python3 main.py --setup token` |
-| Check all frameworks (after setup) | `python3 main.py meta-llama/Llama-3.1-8B` |
-| Check one framework | `python3 main.py --framework vllm deepseek-ai/DeepSeek-V3` |
-| Check vLLM-Ascend | `python3 main.py --framework vllm-ascend deepseek-ai/DeepSeek-V3` |
-| Override saved paths for one run | `python3 main.py --vllm-path /p --sglang-path /q --vllm-ascend-path /r <model>` |
-| Switch mode / reconfigure | `python3 main.py --setup local` or `--setup token` |
-| Forget setup state | `python3 main.py --reset-state` |
-| Skip docs check | `python3 main.py --no-docs <model_id>` |
-| Verbose output | `python3 main.py -v <model_id>` |
-
-## Important Flags
-
 | Flag | Description |
 |------|-------------|
-| `model_id` | HuggingFace or ModelScope model id (positional; required except with `--setup`/`--reset-state`) |
-| `--setup` | `local` (clone repos into `.state/repos/`, recommended) or `token` (GitHub API); persists to `.state/state.json` |
-| `--reset-state` | Delete saved state (cloned repos kept) |
-| `--doctor` | Check setup state and local checkouts, then exit |
-| `--framework` | `sglang`, `vllm`, `vllm-ascend`, or `all` (default: `all`) |
-| `--source` | `auto`, `hf`, or `modelscope` for reading `config.json` |
-| `--token` | GitHub token (or set `GITHUB_TOKEN` env; overrides saved mode paths only in that run) |
-| `--no-docs` | Skip the docs check |
-| `--vllm-ref` | vLLM git ref for registry check (default: `main`; ignored in local mode) |
-| `--vllm-path` | Local vLLM checkout; overrides the saved path for this run |
-| `--sglang-path` | Local SGLang checkout; overrides the saved path for this run |
-| `--vllm-ascend-path` | Local vLLM-Ascend checkout; overrides the saved path for this run |
-| `-v, --verbose` | Verbose output |
+| `--framework` | `sglang` / `vllm` / `vllm-ascend` / `all` |
+| `--source` | `auto` / `hf` / `modelscope` |
+| `--arch` | Manual arch name(s); skips config.json |
+| `--doctor` | Check setup state |
+| `--setup` | `local` or `token` |
+
+`python3 main.py --help` for full flag list.
 
 ## Common Mistakes
 
-- **Skipping `doctor` before a model check** — always run `python3 main.py --doctor` first. Do not inspect `.state/` manually with `ls` or `cat`; doctor is the intended interface.
-- **Checking a model before setup** — without `.state/state.json` the tool refuses to run and prints the `--setup` commands. Run `python3 main.py --doctor` to confirm the current state, then ask the user which mode they want.
-- **Token mode without `GITHUB_TOKEN`** — code search returns 403 for anonymous requests, so a "NO" result is best-effort and not definitive. Prefer local mode; `python3 main.py --doctor` will warn if the token is missing.
-- **Using a shallow git clone for local mode** — version detection needs full git history; use `--setup local` so it clones correctly.
-- **Stale local checkouts** — each run refreshes in the background and prints a note at the end if the checkout is behind; pull when warned.
-- **Expecting exact version numbers** — the "since version" is approximated from the file's earliest commit and may be off by one release.
-- **Forgetting `--no-docs`** when docs pages are JS-rendered or unreachable.
-
-## Notes
-
-- No third-party dependencies; uses Python standard library only.
-- License: The Unlicense.
+- **Skipping doctor** — always `--doctor` first.
+- **Giving up on config.json failure** — escalate: switch platform → webfetch → guide user.
+- **Not using `--arch`** — when config.json is unreachable, pass `--arch` instead of aborting.

@@ -44,7 +44,8 @@ Notes:
 For each framework the checker runs four framework-agnostic steps:
 
 1. **Architecture name** — read `architectures` from the model's `config.json`
-   (HuggingFace first, ModelScope API as fallback).
+   (HuggingFace first, ModelScope API as fallback). Can be overridden with
+   `--arch` to skip the network lookup entirely.
 2. **Official docs** (supplementary) — grep the framework's supported-models page.
 3. **GitHub source** (authoritative) — search the framework's models directory on
    GitHub. All frameworks register a model by mapping the HF architecture
@@ -99,18 +100,24 @@ python3 main.py meta-llama/Llama-3.1-8B
 
 # Token mode: GITHUB_TOKEN per run (never stored)
 GITHUB_TOKEN=xxx python3 main.py meta-llama/Llama-3.1-8B
+
+# Manually specify architecture name (skip config.json fetch)
+python3 main.py --arch LlamaForCausalLM
+python3 main.py --framework vllm --arch DeepseekV3ForCausalLM
+python3 main.py --framework vllm --arch "DeepseekV3ForCausalLM,DeepseekV2ForCausalLM" some-org/some-model
 ```
 
 ### Options
 
 | Flag                 | Description                                                                                       |
 | -------------------- | ------------------------------------------------------------------------------------------------- |
-| `model_id`           | HuggingFace or ModelScope model id (positional; required except with `--setup`/`--reset-state`).  |
+| `model_id`           | HuggingFace or ModelScope model id (positional; optional when `--arch` is given).                 |
 | `--setup`            | One-time setup: `local` (clone repos into `.state/repos/`, recommended) or `token`; persists to `.state/state.json`. |
 | `--reset-state`      | Forget saved setup state (cloned repos kept).                                                     |
 | `--doctor`           | Check setup state and local checkouts, then exit.                                                 |
 | `--framework`        | `sglang`, `vllm`, `vllm-ascend`, or `all` (default: `all`).                                       |
 | `--source`           | `auto`, `hf`, or `modelscope` for reading `config.json`.                                          |
+| `--arch`             | Manually specify architecture name(s), comma-separated. Skips config.json fetch entirely.         |
 | `--token`            | GitHub token (or set `GITHUB_TOKEN` env); overrides saved state for this run.                      |
 | `--no-docs`          | Skip the docs check.                                                                              |
 | `--vllm-ref`         | vLLM git ref (branch/tag) for the registry check (default: `main`).                               |
