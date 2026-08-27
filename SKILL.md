@@ -36,11 +36,12 @@ python3 main.py [--framework <fw>] [--source <src>] [--arch <arch>] <model_id>
 - Manual arch (no config.json needed): `python3 main.py --arch LlamaForCausalLM`
 - Arch + model: `python3 main.py --framework vllm --arch DeepseekV3ForCausalLM <model_id>`
 
-**Step 4b — Reconcile discrepancies.** If docs=YES but source=NO for any framework, manually inspect the repo:
-1. Read the framework's registry file (vLLM: `registry.py`; vLLM-Ascend: `__init__.py`) to check if the architecture is registered.
-2. If registered, trace the module path to find the implementation file (may be in a new directory structure like `vllm/models/<family>/`).
-3. Verify the architecture string exists in that file.
-4. Update the result to YES with the correct file path.
+**Step 4b — Reconcile discrepancies.** If docs=YES but source=NO for any framework, the directory layout has likely changed. Do not assume known paths; instead:
+1. Read the framework's registry file to find where the architecture is registered.
+2. Extract the module path from the registry entry.
+3. Trace that module path to locate the actual implementation file on disk.
+4. Verify the architecture string exists in that file.
+5. Update the result to YES with the correct file path.
 
 **Step 5 — Report.** Parse Summary. Report: YES/NO per framework, minimum version, file path, vLLM category/module/class.
 
