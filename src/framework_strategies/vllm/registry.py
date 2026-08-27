@@ -64,7 +64,7 @@ def _parse_dict_entries(source, dict_name):
     body = source[start : i - 1]
 
     entry_re = re.compile(
-        r'''["'](\w+)["']\s*:\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*\)'''
+        r'''["'](\w+)["']\s*:\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*,?\s*\)'''
     )
     result = {}
     for m in entry_re.finditer(body):
