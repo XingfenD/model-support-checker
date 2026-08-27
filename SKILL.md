@@ -41,7 +41,8 @@ python3 main.py [--framework <fw>] [--source <src>] [--arch <arch>] <model_id>
 2. Extract the module path from the registry entry.
 3. Trace that module path to locate the actual implementation file on disk.
 4. Verify the architecture string exists in that file.
-5. Update the result to YES with the correct file path.
+5. If the registry does not contain the architecture, search the entire framework repo for the architecture string (e.g. `rg <ArchName> <repo_root>`) to locate where it is referenced.
+6. Update the result to YES with the correct file path.
 
 **Step 5 — Report.** Parse Summary. Report: YES/NO per framework, minimum version, file path, vLLM category/module/class.
 
