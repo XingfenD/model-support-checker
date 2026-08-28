@@ -3,7 +3,6 @@
 import os
 from typing import Optional, Tuple
 
-from ...check import check_support as _check_support
 from ...context import Context
 from .registry import (
     check_vllm_registry,
@@ -30,7 +29,7 @@ class VllmStrategy(FrameworkStrategy):
     def check_support(
         self, arch: str, ctx: Context, token: Optional[str] = None, verbose: bool = False
     ) -> Tuple[bool, Optional[str]]:
-        supported, file_path = _check_support(arch, ctx, token, verbose)
+        supported, file_path = super().check_support(arch, ctx, token, verbose)
         if supported:
             return True, file_path
         try:
