@@ -75,6 +75,32 @@ Bypass the script; follow methodology manually:
 4. Earliest commit → nearest release tag for version.
 5. Report in script Summary format.
 
+### Fallback 3: Source=NO but model is recent / may ship support out-of-tree
+
+The script's source check is authoritative for the **merged `main` branch checkout**, but framework teams frequently ship support through channels that are NOT in the default `main` checkout the script greps:
+
+- **Official Docker images** with the implementation baked in (e.g. `lmsysorg/sglang:glm-5.3-flash`, `vllm/vllm-openai-rocm:glm53-flash`).
+- **A separate support branch** not yet merged to main (e.g. `xinyuan/glm-5.3-flash-support`).
+- **Vendor recipes / cookbook pages** (e.g. `recipes.vllm.ai/<org>/<model>`, `cookbook.sglang.io/...`).
+
+This is the reverse of Step 4b (docs=YES, source=NO). When source=NO, do NOT report a flat "unsupported" until the official deployment docs are checked:
+
+1. Fetch the model card on **both** HF and ModelScope (one is often gated/401):
+   - HF: `https://huggingface.co/<org>/<model>` and `.../resolve/main/README.md`
+   - MS: `https://modelscope.cn/models/<org>/<model>` and `.../resolve/master/README.md`
+2. Find a "Deploy / Serve locally" section. If it lists vLLM / SGLang / vLLM-Ascend, the model IS deployable — capture the exact mechanism:
+   - Docker image tag(s) and required version (e.g. "vLLM 0.29.0+", "use docker before integration is in the public repo").
+   - Extra requirements: FlashInfer version, GPU arch (Hopper+/Blackwell/gfx950), `--tool-call-parser` / `--reasoning-parser`, MTP/speculative config.
+   - Caveats: features only on a specific branch/PR, image alone insufficient, etc.
+3. Follow the recipe links to get the concrete launch command and image name.
+4. Report a **nuanced** result instead of a bare NO. Distinguish these states:
+   - `merged` — in the public repo/PyPI, version-known.
+   - `image-only` — runs via vendor Docker image, not yet in public main.
+   - `branch-only` — needs a specific git branch/PR checkout.
+   - `unsupported` — no official path at all.
+
+The official model card + recipes are authoritative about HOW to run, even when the implementation is not in the default `main` checkout. This supersedes a flat NO from the script.
+
 ## Quick Reference
 
 | Flag | Description |
@@ -93,3 +119,4 @@ Bypass the script; follow methodology manually:
 - **Giving up on config.json failure** — escalate: switch platform → webfetch → guide user.
 - **Not using `--arch`** — when config.json is unreachable, pass `--arch` instead of aborting.
 - **Trusting source=NO when docs=YES** — frameworks may reorganize directories; do Step 4b reconciliation.
+- **Trusting source=NO as final for recent models** — vendors often ship support via official Docker images / separate branches / recipe pages that are NOT in the default `main` checkout the script greps. Check the official model card + recipes (Fallback 3) before concluding "unsupported".
