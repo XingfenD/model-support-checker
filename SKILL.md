@@ -16,7 +16,7 @@ The authoritative signal: does the framework's **source code** contain an implem
 3. **Source** (authoritative) — search the models directory for the architecture string.
 4. **Reconcile** — if docs say YES but source says NO, manually inspect the framework's repo to resolve the discrepancy (see Step 4b).
 5. **Version** — earliest commit on the implementation file → nearest release tag.
-6. **Deploy** — once support is confirmed, read the official deployment docs and hand the user a ready-to-run serving command with the known pitfalls for that model (see Step 6).
+6. **Deploy** — once support is confirmed, read the official deployment docs and hand the user a ready-to-run serving command (see Step 6).
 
 The tool is stateful; mode persists in `.state/state.json`. Local clone (recommended) greps on disk. Token mode uses GitHub API.
 
@@ -54,17 +54,6 @@ python3 main.py [--framework <fw>] [--source <src>] [--arch <arch>] <model_id>
    - Model card README (HF + ModelScope) — "Deploy / Serve locally" section.
    - Quantized variant docs if the user runs one (W8A8 / MXFP8 / AWQ often have DIFFERENT required flags, e.g. `--quantization ascend` for W8A8 on vLLM-Ascend).
 2. **Output the launch command verbatim from the docs** (do not assemble flags from memory), plus: hardware/memory requirement, required env vars, and a verification command (log follow + a smoke completion request).
-3. **Run the pitfall checklist below** — these bit in real deployments:
-
-| Pitfall | Symptom | Fix |
-|---------|---------|-----|
-| Multimodal model, unused modality not disabled | NPU/GPU OOM in `profile_run` at `embed_multimodal` ("profiled with 1 video items of the maximum feature size") | `--limit-mm-per-prompt '{"image":1,"video":0}'` — explicitly set unused modalities to 0 |
-| `--max-model-len` not set | KV/encoder cache budget sized for the model's max (e.g. 1M ctx) on hardware that fits a fraction | Set explicit `--max-model-len` starting small; raise after confirming KV cache headroom in logs |
-| Quantization flag missing | Load failure or wrong quant path | Vendor docs usually REQUIRE the explicit flag (`--quantization ascend` for W8A8 on NPU) |
-| Model dir mounted one level off | `Invalid repository ID or local directory specified` | Mount/point to the layer that directly contains `config.json` |
-| OOM stage misread | Wrong fix attempted | Read WHERE it died: config parse → path; `load_model` → weights/TP; `profile_run` → activations/mm dummy; KV cache sizing → lower max-model-len or gpu-mem-util |
-
-
 ## Fallback Strategies
 
 ### Fallback 1: config.json fetch fails
@@ -139,4 +128,4 @@ The official model card + recipes are authoritative about HOW to run, even when 
 - **Not using `--arch`** — when config.json is unreachable, pass `--arch` instead of aborting.
 - **Trusting source=NO when docs=YES** — frameworks may reorganize directories; do Step 4b reconciliation.
 - **Trusting source=NO as final for recent models** — vendors often ship support via official Docker images / separate branches / recipe pages that are NOT in the default `main` checkout the script greps. Check the official model card + recipes (Fallback 3) before concluding "unsupported".
-- **Stopping at "YES" without deployment advice** — the user asked because they want to RUN the model. Always finish with Step 6: official launch command + hardware requirement + pitfall checklist.
+- **Stopping at "YES" without deployment advice** — the user asked because they want to RUN the model. Always finish with Step 6: official launch command + hardware requirement.
