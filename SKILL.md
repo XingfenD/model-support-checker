@@ -47,13 +47,27 @@ python3 main.py [--framework <fw>] [--source <src>] [--arch <arch>] <model_id>
 
 **Step 5 — Report.** Parse Summary. Report: YES/NO per framework, minimum version, file path, vLLM category/module/class.
 
-**Step 6 — Deployment advice.** After confirming support, do NOT stop at "YES" — the user's real goal is to run the model. Read the official deployment docs and hand over a ready-to-run command:
+**Step 6 — Deployment advice.** After confirming support, do NOT stop at "YES" — the user's real goal is to run the model. Produce deployment advice in TWO rounds: an official-command template first, a customized ready-to-run command after the user's environment is known.
+
+**Round 1 — Official command template (do this before asking the user anything):**
 
 1. **Fetch official serving docs, in this authority order:**
    - Framework tutorial page — vLLM-Ascend: `https://docs.vllm.ai/projects/ascend/<lang>/latest/tutorials/models/<Model>.html`; vLLM recipes: `recipes.vllm.ai`; SGLang cookbook: `cookbook.sglang.io`. These carry vendor-tuned flags the model card may lack.
    - Model card README (HF + ModelScope) — "Deploy / Serve locally" section.
    - Quantized variant docs if the user runs one (W8A8 / MXFP8 / AWQ often have DIFFERENT required flags, e.g. `--quantization ascend` for W8A8 on vLLM-Ascend).
-2. **Output the launch command verbatim from the docs** (do not assemble flags from memory), plus: hardware/memory requirement, required env vars, and a verification command (log follow + a smoke completion request).
+2. **Quote the launch command VERBATIM from the docs page itself.** Webfetch the page (or its raw markdown source, e.g. the framework repo's `docs/source/tutorials/models/<Model>.md`) and copy the exact code block. NEVER reconstruct commands from search-result summaries or memory. Tutorial pages usually contain MULTIPLE scenario variants (BF16 vs W8A8 vs PD-separated, different TP/DP splits, different `--quantization` values): pick the variant matching the user's checkpoint and hardware, and state which variant you picked and why.
+3. **Output the Round-1 template:**
+   - The verbatim official command in a code block, with environment-specific values left as placeholders exactly as the docs wrote them (`${WEIGHT_PATH}`, `${EAGLE3_WEIGHT_PATH}`, port, log path...).
+   - A **placeholder table**: each placeholder → what the user must provide.
+   - Hardware/memory requirement, required env vars, and a verification command (log follow + a smoke completion request).
+4. **Ask the user for the placeholder values and runtime context**: model weights path on their machine, NPU/GPU model and count, container runtime + image tag (they may use an internal registry mirror), desired port, non-standard mounts. Do NOT guess these values or silently substitute your own.
+
+**Round 2 — Customized command (after the user provides environment info):**
+
+5. Merge the user's values into the official command and output a ready-to-run command for their exact runtime (e.g. `nerdctl run` / `docker run` wrapping `vllm serve`, with correct device/mount/env flags).
+6. **Do NOT carry over the official docs' log redirection or backgrounding** (`> ${LOG_PATH} 2>&1 &`, `nohup ... &`). Run the serving process in the FOREGROUND so the user's runtime captures stdout/stderr (`nerdctl logs -f` / `docker logs -f` / `kubectl logs`); startup errors stay visible. If the user also wants file logs, offer `... 2>&1 | tee <log>` as an optional variant — never as the default.
+7. **Include a diff table vs the official command** — every deviation: what changed, why (port change, EAGLE3 dropped because user lacks draft weights, internal-registry image substituted, log redirection removed so container logs work, ...). Every item REMOVED from the official command must be listed with its reason and how to re-enable later.
+8. **Label non-official additions.** Any env var or flag you add that does NOT appear in the official docs must be explicitly marked as your own suggestion, not presented as official. If debugging later reveals an official knob you missed (e.g. `HCCL_BUFFSIZE` in a PD-separated section), re-check the docs page and correct the record.
 ## Fallback Strategies
 
 ### Fallback 1: config.json fetch fails
@@ -129,3 +143,7 @@ The official model card + recipes are authoritative about HOW to run, even when 
 - **Trusting source=NO when docs=YES** — frameworks may reorganize directories; do Step 4b reconciliation.
 - **Trusting source=NO as final for recent models** — vendors often ship support via official Docker images / separate branches / recipe pages that are NOT in the default `main` checkout the script greps. Check the official model card + recipes (Fallback 3) before concluding "unsupported".
 - **Stopping at "YES" without deployment advice** — the user asked because they want to RUN the model. Always finish with Step 6: official launch command + hardware requirement.
+- **Assembling the launch command from search summaries or memory** — search summaries mix scenario variants (BF16 vs W8A8, TP16+EP vs TP4+DP4) and silently drop env vars like `HCCL_BUFFSIZE`. Webfetch the docs page and quote the code block verbatim (Step 6.2).
+- **Inventing env vars or flags** — e.g. guessing an env var `VLLM_ASCEND_ENABLE_FLASHCOMM1=0` when the real knob is `--additional-config '{"enable_flashcomm1": true}'`. Use only what the docs page contains; label anything else as your own suggestion (Step 6.8).
+- **Skipping the Round-2 diff table** — the user cannot trust a customized command unless they see exactly where it deviates from the official one and why (Step 6.7).
+- **Copying the docs' log redirection into the customized command** — official scripts often end with `> ${LOG_PATH} 2>&1 &`; in a container this hides startup errors from `nerdctl logs` / `docker logs`. Run the server in the foreground (Step 6.6).
