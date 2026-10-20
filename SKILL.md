@@ -17,6 +17,7 @@ The authoritative signal: does the framework's **source code** contain an implem
 4. **Reconcile** — if docs say YES but source says NO, manually inspect the framework's repo to resolve the discrepancy (see Step 4b).
 5. **Version** — earliest commit on the implementation file → nearest release tag.
 6. **Deploy** — once support is confirmed, read the official deployment docs and hand the user a ready-to-run serving command (see Step 6).
+7. **Harvest (optional)** — turn deterministic manual work into checker improvements, but report and get user approval first (see Step 7).
 
 The tool is stateful; mode persists in `.state/state.json`. Local clone (recommended) greps on disk. Token mode uses GitHub API.
 
@@ -68,6 +69,38 @@ python3 main.py [--framework <fw>] [--source <src>] [--arch <arch>] <model_id>
 6. **Do NOT carry over the official docs' log redirection or backgrounding** (`> ${LOG_PATH} 2>&1 &`, `nohup ... &`). Run the serving process in the FOREGROUND so the user's runtime captures stdout/stderr (`nerdctl logs -f` / `docker logs -f` / `kubectl logs`); startup errors stay visible. If the user also wants file logs, offer `... 2>&1 | tee <log>` as an optional variant — never as the default.
 7. **Include a diff table vs the official command** — every deviation: what changed, why (port change, EAGLE3 dropped because user lacks draft weights, internal-registry image substituted, log redirection removed so container logs work, ...). Every item REMOVED from the official command must be listed with its reason and how to re-enable later.
 8. **Label non-official additions.** Any env var or flag you add that does NOT appear in the official docs must be explicitly marked as your own suggestion, not presented as official. If debugging later reveals an official knob you missed (e.g. `HCCL_BUFFSIZE` in a PD-separated section), re-check the docs page and correct the record.
+
+**Step 7 — Automation harvest (optional; report first, implement only on approval).**
+
+After the report and deployment advice, review what you did manually in Steps 3–6 and identify work that was repetitive, deterministic, and testable enough to become a static check in this tool. Skip this step for one-off checks where every result came straight from the script.
+
+Classify each candidate as:
+
+- **feat** — a deterministic capability the checker does not have yet.
+- **bugfix** — a manual correction that fixed a wrong checker output.
+
+Common candidates:
+
+- **Architecture remaps** — a config module normalizes `XForCausalLM` to `YForCausalLM` (e.g. SGLang `configs/deepseek_v41.py`). Plain string grep returns a false NO; a static scan of config normalization plus `EntryClass` would catch it.
+- **Registry resolution** — parse `ModelRegistry.register_model` / `models/__init__.py` `"Arch": "module:Class"` entries and verify the target module exists, instead of only grepping `models/`.
+- **Reverted-then-relanded support** — `git log --grep Revert` on the implementation path; a local snapshot can contain a revert while upstream `main` has the re-land.
+- **Release-tag filtering** — ignore synthetic `proto-*` tags; use `git tag --contains <commit>` filtered to release-like tags, and distinguish "first code presence" from "docs-recommended minimum".
+- **Stale checkout / upstream drift** — check the upstream raw file or `git ls-remote` when the local checkout is behind, instead of reporting a stale NO.
+- **Newest checkpoint resolution** — map a shorthand to the base model and its newest dated checkpoint (`-1017` vs `-0909`), and verify the architecture/config is unchanged.
+- **Structured output** — `--json` so repeated checks can be diffed or run in CI.
+
+Report to the user BEFORE writing any code, using this table:
+
+| # | Type | Manual step observed | Why it is scriptable | Proposed change (file/flag) | Expected effect | Risk / effort |
+
+Rules:
+
+1. Do not edit `main.py`, `src/`, or add scripts in this step. Report only.
+2. Exclude judgment calls (which recipe variant matches the user's hardware, whether a docs page is authoritative, how to phrase deployment advice). Only deterministic input → output steps qualify.
+3. Ask the user which candidates to implement (multi-select). If the user declines, stop — do not implement "while here".
+4. For each approved item: add a regression fixture/test first that reproduces the manual finding, then implement, then re-run the original model to prove the output changed from wrong→right (bugfix) or absent→present (feat).
+5. New checks must not turn an existing correct YES into NO; keep `--doctor` and current CLI behavior stable.
+
 ## Fallback Strategies
 
 ### Fallback 1: config.json fetch fails
@@ -147,3 +180,5 @@ The official model card + recipes are authoritative about HOW to run, even when 
 - **Inventing env vars or flags** — e.g. guessing an env var `VLLM_ASCEND_ENABLE_FLASHCOMM1=0` when the real knob is `--additional-config '{"enable_flashcomm1": true}'`. Use only what the docs page contains; label anything else as your own suggestion (Step 6.8).
 - **Skipping the Round-2 diff table** — the user cannot trust a customized command unless they see exactly where it deviates from the official one and why (Step 6.7).
 - **Copying the docs' log redirection into the customized command** — official scripts often end with `> ${LOG_PATH} 2>&1 &`; in a container this hides startup errors from `nerdctl logs` / `docker logs`. Run the server in the foreground (Step 6.6).
+- **Auto-implementing checker improvements during a support check** — Step 7 is report-first. Do not edit `main.py`, `src/`, or add scripts just because you spotted a defect; the user decides which candidates to fund.
+- **Reporting vague "tool defects" instead of candidates** — classify each as `feat` or `bugfix`, name the file/flag and expected effect. A prose complaint the user cannot prioritize is not an automation harvest.
