@@ -9,7 +9,7 @@ Check whether a HuggingFace / ModelScope model is supported by **SGLang**, **vLL
 
 ## Methodology
 
-The authoritative signal: does the framework's **source code** contain an implementation for the model's architecture string? Docs are supplementary.
+The authoritative signal: does the framework's **source code** contain an implementation for the model's architecture string? Docs are supplementary. Results describe the **configured checkout**; the tool does not reconstruct revert history or compare against upstream `main`.
 
 1. **Architecture** — `architectures` from `config.json` (HF → ModelScope fallback). Override with `--arch`.
 2. **Docs** (supplementary) — grep the framework's supported-models page.
@@ -83,9 +83,7 @@ Common candidates:
 
 - **Architecture remaps** — a config module normalizes `XForCausalLM` to `YForCausalLM` (e.g. SGLang `configs/deepseek_v41.py`). Plain string grep returns a false NO; a static scan of config normalization plus `EntryClass` would catch it.
 - **Registry resolution** — parse `ModelRegistry.register_model` / `models/__init__.py` `"Arch": "module:Class"` entries and verify the target module exists, instead of only grepping `models/`.
-- **Reverted-then-relanded support** — `git log --grep Revert` on the implementation path; a local snapshot can contain a revert while upstream `main` has the re-land.
 - **Release-tag filtering** — ignore synthetic `proto-*` tags; use `git tag --contains <commit>` filtered to release-like tags, and distinguish "first code presence" from "docs-recommended minimum".
-- **Stale checkout / upstream drift** — check the upstream raw file or `git ls-remote` when the local checkout is behind, instead of reporting a stale NO.
 - **Newest checkpoint resolution** — map a shorthand to the base model and its newest dated checkpoint (`-1017` vs `-0909`), and verify the architecture/config is unchanged.
 - **Structured output** — `--json` so repeated checks can be diffed or run in CI.
 
@@ -183,5 +181,4 @@ The official model card + recipes are authoritative about HOW to run, even when 
 - **Copying the docs' log redirection into the customized command** — official scripts often end with `> ${LOG_PATH} 2>&1 &`; in a container this hides startup errors from `nerdctl logs` / `docker logs`. Run the server in the foreground (Step 6.6).
 - **Auto-implementing checker improvements during a support check** — Step 7 is report-first. Do not edit `main.py`, `src/`, or add scripts just because you spotted a defect; the user decides which candidates to fund.
 - **Reporting vague "tool defects" instead of candidates** — classify each as `feat` or `bugfix`, name the file/flag and expected effect. A prose complaint the user cannot prioritize is not an automation harvest.
-- **Reporting a flat NO from a snapshot that contains a revert** — check the `REVERTED in checkout` annotation and upstream `main`; vLLM-Ascend's V4.1 support was reverted (#16905) and later re-landed.
 - **Trusting a version derived from tag creation date** — pick the first release tag that *contains* the implementation commit; ignore synthetic `proto-*` tags and unrelated later tags.

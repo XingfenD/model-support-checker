@@ -104,54 +104,6 @@ class FrameworkStrategy:
     def extra_checks(self, arch: str, ctx: Context, token: Optional[str], verbose: bool, ref: Optional[str] = None):
         return None
 
-    def detect_revert(self, arch: str, ctx: Context, verbose: bool = False):
-        """Detect a local revert commit that removed *arch*.
-
-        A snapshot can contain a revert even when upstream main has already
-        re-landed the support (vLLM-Ascend #16544 -> #16905).  Returning a flat
-        NO from that snapshot is misleading, so callers annotate it.
-
-        Returns ``{"commit": short_sha, "subject": subject}`` or ``None``.
-        """
-        if not ctx.is_local:
-            return None
-        repo = ctx.local_dir
-        log = subprocess.run(
-            ["git", "-C", repo, "log", "--all", "--grep=Revert", "-i",
-             "--format=%H%x00%s", "-n", "200"],
-            capture_output=True, text=True,
-        )
-        if log.returncode != 0 or not log.stdout.strip():
-            return None
-        family = arch.replace("ForCausalLM", "")
-        for line in log.stdout.splitlines():
-            if "\x00" not in line:
-                continue
-            sha, subject = line.split("\x00", 1)
-            show = subprocess.run(
-                ["git", "-C", repo, "show", "--format=", "--unified=0", sha],
-                capture_output=True, text=True,
-            )
-            if show.returncode != 0:
-                continue
-            removed = [
-                ln for ln in show.stdout.splitlines()
-                if ln.startswith("-") and not ln.startswith("---")
-            ]
-            if any(arch in ln for ln in removed):
-                if verbose:
-                    print(f"  [revert] {sha[:12]} removed '{arch}': {subject}")
-                return {"commit": sha[:12], "subject": subject}
-            # Case-insensitive fallback for code that spells the family in
-            # snake_case (e.g. ``deepseek_v41`` in a registry entry).
-            if family and family.lower() in subject.lower() and any(
-                family.lower() in ln.lower() for ln in removed
-            ):
-                if verbose:
-                    print(f"  [revert] {sha[:12]} removed '{family}': {subject}")
-                return {"commit": sha[:12], "subject": subject}
-        return None
-
     def list_py_files(self, ctx: Context, rel_dir: str, verbose: bool = False) -> set:
         """List ``.py`` files in a repository-relative directory."""
         if ctx.is_local:
@@ -176,34 +128,6 @@ class FrameworkStrategy:
         except RuntimeError:
             return set()
         return set(re.findall(r'"name":"([a-zA-Z0-9_]+\.py)"', body or ""))
-
-    def check_upstream_support(self, arch: str, ctx: Context,
-                               token: Optional[str] = None,
-                               verbose: bool = False):
-        """Check the same architecture against upstream ``main``.
-
-        Used after a local revert hit: it distinguishes "not supported" from
-        "the snapshot is stale and upstream already re-landed it".
-        """
-        if not ctx.is_local:
-            return None
-        saved = {
-            attr: getattr(self, attr, None)
-            for attr in ("remap_info", "_registry_file_path")
-        }
-        remote = Context.from_strategy(self)
-        try:
-            supported, file_path = self.check_support(
-                arch, remote, token, verbose
-            )
-        except Exception as e:  # network/parse failure must not break the run
-            if verbose:
-                print(f"  [upstream] check failed: {e}")
-            return None
-        finally:
-            for attr, value in saved.items():
-                setattr(self, attr, value)
-        return {"supported": bool(supported), "file": file_path}
 
     def format_summary_extra(self, info) -> None:
         pass

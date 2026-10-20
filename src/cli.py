@@ -186,24 +186,6 @@ def main():
         print(f"    Supported in source: {'YES' if supported else 'NO'}"
               + (f"  ({file_path})" if file_path else ""))
 
-        # A local snapshot may contain a revert even though upstream has
-        # re-landed the support; annotate instead of reporting a flat NO.
-        revert = None
-        if not supported:
-            revert = strategy.detect_revert(arch, ctx, args.verbose)
-            if revert:
-                print(f"    REVERTED in checkout: {revert['commit']} {revert['subject']}")
-                upstream = strategy.check_upstream_support(
-                    arch, ctx, args.token, args.verbose
-                )
-                revert["upstream"] = upstream
-                if upstream and upstream["supported"]:
-                    print(f"    Upstream main: YES ({upstream['file']})")
-                elif upstream:
-                    print("    Upstream main: NO")
-                else:
-                    print("    Upstream main: check unavailable")
-
         # Framework-specific extra checks (e.g. vLLM registry)
         extra = strategy.extra_checks(arch, ctx, args.token, args.verbose, ref=args.vllm_ref)
 
@@ -236,7 +218,6 @@ def main():
             "docs": docs,
             "registry": extra,
             "remap": getattr(strategy, "remap_info", None),
-            "revert": revert,
         }
         print()
 
@@ -251,17 +232,6 @@ def main():
             line += f"  | since {version} | {file_path}"
         print(line)
         strategy.format_summary_extra(extra)
-        rev = entries.get(fw_name, {}).get("revert")
-        if rev:
-            note = f"NOTE: reverted in checkout ({rev['commit']});"
-            up = rev.get("upstream")
-            if up and up.get("supported"):
-                note += f" upstream main has it ({up['file']})"
-            elif up:
-                note += " upstream main also lacks it"
-            else:
-                note += " upstream check unavailable"
-            print(f"         {note}")
     print("\nNote: GitHub source is the authoritative signal for all frameworks.")
     print("The 'since version' is the first release tag that contains the")
     print("implementation commit; official recipes may recommend a newer minimum.")

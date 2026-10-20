@@ -43,7 +43,6 @@ class JsonReportTests(unittest.TestCase):
                         "to": "DeepseekV4ForCausalLM",
                         "file": "python/sglang/srt/configs/deepseek_v41.py",
                     },
-                    "revert": None,
                 }
             },
             freshness={"sglang": {"path": "/tmp/sglang", "behind": 3}},
@@ -106,6 +105,7 @@ class JsonReportTests(unittest.TestCase):
             )
             self.assertEqual(entry["remap"]["to"], "DeepseekV4ForCausalLM")
             self.assertEqual(entry["version"], "v0.5.21")
+            self.assertNotIn("revert", entry)
 
 
 if __name__ == "__main__":

@@ -65,10 +65,10 @@ For each framework the checker runs four framework-agnostic steps:
    remapped architecture the remap config's first commit is used, not the
    older base-model file.
 
-If a local snapshot contains a revert commit that removed the architecture,
-the report annotates `REVERTED in checkout`, checks upstream `main`, and
-reports whether the support was already re-landed there instead of returning
-a bare NO.
+**Scope:** results describe the configured checkout only. The tool does not
+reconstruct revert history or compare against upstream `main`; run `git pull`
+or point `--vllm-path` / `--sglang-path` / `--vllm-ascend-path` at the revision
+you want to inspect.
 
 The authoritative "is it supported" check uses the GitHub **code-search API**
 with a path filter on the models directory. Anonymous code search returns 403,
