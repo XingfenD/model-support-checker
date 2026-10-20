@@ -278,7 +278,7 @@ class FrameworkStrategy:
     def _get_version_local(self, file_path: str, ctx: Context, verbose: bool = False) -> str:
         repo = ctx.local_dir
         log = subprocess.run(
-            ["git", "-C", repo, "log", "--follow",
+            ["git", "-C", repo, "log", "--follow", "--diff-filter=AC",
              "--format=%H%x00%aI", "--", file_path],
             capture_output=True, text=True,
         )
@@ -286,12 +286,16 @@ class FrameworkStrategy:
             if verbose:
                 print(f"  [version] no git history for {file_path}.")
             return "unknown"
-        # ``git log --follow --reverse`` does not traverse the rename chain in
-        # current git, so take the last line of the normal (newest-first) log.
-        first_line = log.stdout.strip().splitlines()[-1]
+        # The log is newest-first, so take the first line: the latest add
+        # commit.  ``--diff-filter=AC`` keeps plain adds and copies but drops
+        # reverts (D) and pure renames (R); ``--follow`` walks rename history.
+        # A revert/re-add therefore anchors at the re-add -- including the
+        # vLLM-Ascend case where Git records the re-add as a copy (C062) --
+        # instead of the older file it was copied/renamed from.
+        first_line = log.stdout.strip().splitlines()[0]
         first_hash, _, first_date = first_line.partition("\x00")
         if verbose:
-            print(f"  [version] earliest commit touching {file_path}: "
+            print(f"  [version] latest add commit touching {file_path}: "
                   f"{first_date} ({first_hash[:12]})")
 
         # Only tags that actually contain the implementation commit are
