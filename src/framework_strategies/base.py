@@ -10,6 +10,13 @@ from typing import Optional, Tuple
 from ..context import Context
 from ..http_utils import BROWSER_UA, _get, _get_json
 
+# Release tags we are willing to report as a "first version".  Deliberately
+# excludes synthetic tags such as ``proto-v0.2.0`` that some mirrors use.
+_STABLE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
+_RELEASE_TAG_RE = re.compile(
+    r"^v\d+\.\d+(?:\.\d+)?(?:[-.]?(?:rc|a|b|post)\d+)?$", re.IGNORECASE
+)
+
 
 class FrameworkStrategy:
     name = None
@@ -96,6 +103,107 @@ class FrameworkStrategy:
 
     def extra_checks(self, arch: str, ctx: Context, token: Optional[str], verbose: bool, ref: Optional[str] = None):
         return None
+
+    def detect_revert(self, arch: str, ctx: Context, verbose: bool = False):
+        """Detect a local revert commit that removed *arch*.
+
+        A snapshot can contain a revert even when upstream main has already
+        re-landed the support (vLLM-Ascend #16544 -> #16905).  Returning a flat
+        NO from that snapshot is misleading, so callers annotate it.
+
+        Returns ``{"commit": short_sha, "subject": subject}`` or ``None``.
+        """
+        if not ctx.is_local:
+            return None
+        repo = ctx.local_dir
+        log = subprocess.run(
+            ["git", "-C", repo, "log", "--all", "--grep=Revert", "-i",
+             "--format=%H%x00%s", "-n", "200"],
+            capture_output=True, text=True,
+        )
+        if log.returncode != 0 or not log.stdout.strip():
+            return None
+        family = arch.replace("ForCausalLM", "")
+        for line in log.stdout.splitlines():
+            if "\x00" not in line:
+                continue
+            sha, subject = line.split("\x00", 1)
+            show = subprocess.run(
+                ["git", "-C", repo, "show", "--format=", "--unified=0", sha],
+                capture_output=True, text=True,
+            )
+            if show.returncode != 0:
+                continue
+            removed = [
+                ln for ln in show.stdout.splitlines()
+                if ln.startswith("-") and not ln.startswith("---")
+            ]
+            if any(arch in ln for ln in removed):
+                if verbose:
+                    print(f"  [revert] {sha[:12]} removed '{arch}': {subject}")
+                return {"commit": sha[:12], "subject": subject}
+            # Case-insensitive fallback for code that spells the family in
+            # snake_case (e.g. ``deepseek_v41`` in a registry entry).
+            if family and family.lower() in subject.lower() and any(
+                family.lower() in ln.lower() for ln in removed
+            ):
+                if verbose:
+                    print(f"  [revert] {sha[:12]} removed '{family}': {subject}")
+                return {"commit": sha[:12], "subject": subject}
+        return None
+
+    def list_py_files(self, ctx: Context, rel_dir: str, verbose: bool = False) -> set:
+        """List ``.py`` files in a repository-relative directory."""
+        if ctx.is_local:
+            d = os.path.join(ctx.local_dir, rel_dir)
+            try:
+                return {f for f in os.listdir(d) if f.endswith(".py")}
+            except OSError:
+                if verbose:
+                    print(f"  [local] could not list directory {d}.")
+                return set()
+
+        data = _get_json(f"{ctx.api}/contents/{rel_dir}")
+        if isinstance(data, list):
+            return {
+                e["name"] for e in data
+                if e.get("type") == "file" and e["name"].endswith(".py")
+            }
+
+        turl = f"https://github.com/{ctx.repo}/tree/{ctx.branch}/{rel_dir}"
+        try:
+            body, _ = _get(turl, ua=BROWSER_UA)
+        except RuntimeError:
+            return set()
+        return set(re.findall(r'"name":"([a-zA-Z0-9_]+\.py)"', body or ""))
+
+    def check_upstream_support(self, arch: str, ctx: Context,
+                               token: Optional[str] = None,
+                               verbose: bool = False):
+        """Check the same architecture against upstream ``main``.
+
+        Used after a local revert hit: it distinguishes "not supported" from
+        "the snapshot is stale and upstream already re-landed it".
+        """
+        if not ctx.is_local:
+            return None
+        saved = {
+            attr: getattr(self, attr, None)
+            for attr in ("remap_info", "_registry_file_path")
+        }
+        remote = Context.from_strategy(self)
+        try:
+            supported, file_path = self.check_support(
+                arch, remote, token, verbose
+            )
+        except Exception as e:  # network/parse failure must not break the run
+            if verbose:
+                print(f"  [upstream] check failed: {e}")
+            return None
+        finally:
+            for attr, value in saved.items():
+                setattr(self, attr, value)
+        return {"supported": bool(supported), "file": file_path}
 
     def format_summary_extra(self, info) -> None:
         pass
@@ -208,42 +316,61 @@ class FrameworkStrategy:
 
     def _first_release_after(self, date_iso: str, ctx: Context, token: Optional[str]) -> str:
         rels = _get_json(f"{ctx.api}/releases?per_page=100", token) or []
-        picked = None
+        candidates = []
         for r in rels:
+            tag = r.get("tag_name") or ""
             pub = r.get("published_at")
-            if not pub:
+            if not pub or not _RELEASE_TAG_RE.match(tag):
                 continue
-            if pub >= date_iso and (picked is None or pub < picked["published_at"]):
-                picked = r
-        return picked["tag_name"] if picked else "unreleased (main)"
+            if pub >= date_iso:
+                candidates.append(r)
+        if not candidates:
+            return "unreleased (main)"
+        stable = [
+            r for r in candidates
+            if _STABLE_TAG_RE.match(r.get("tag_name") or "")
+        ]
+        pool = stable or candidates
+        picked = min(pool, key=lambda r: r["published_at"])
+        return picked["tag_name"]
 
     def _get_version_local(self, file_path: str, ctx: Context, verbose: bool = False) -> str:
         repo = ctx.local_dir
         log = subprocess.run(
-            ["git", "-C", repo, "log", "--reverse", "--format=%aI", "--", file_path],
+            ["git", "-C", repo, "log", "--follow",
+             "--format=%H%x00%aI", "--", file_path],
             capture_output=True, text=True,
         )
         if log.returncode != 0 or not log.stdout.strip():
             if verbose:
                 print(f"  [version] no git history for {file_path}.")
             return "unknown"
-        first_date = log.stdout.strip().splitlines()[0]
+        # ``git log --follow --reverse`` does not traverse the rename chain in
+        # current git, so take the last line of the normal (newest-first) log.
+        first_line = log.stdout.strip().splitlines()[-1]
+        first_hash, _, first_date = first_line.partition("\x00")
         if verbose:
-            print(f"  [version] earliest commit touching {file_path}: {first_date}")
+            print(f"  [version] earliest commit touching {file_path}: "
+                  f"{first_date} ({first_hash[:12]})")
 
+        # Only tags that actually contain the implementation commit are
+        # candidates.  Sorting by creatordate and filtering to real release
+        # tags avoids synthetic ``proto-*`` tags and "a tag created later but
+        # on an unrelated branch" false positives.
         tags = subprocess.run(
-            ["git", "-C", repo, "for-each-ref", "--sort=creatordate",
-             "--format=%(creatordate:iso-strict) %(refname:short)", "refs/tags"],
+            ["git", "-C", repo, "tag", "--contains", first_hash,
+             "--sort=creatordate"],
             capture_output=True, text=True,
         )
         if tags.returncode != 0:
             return "unreleased (main)"
-        picked = None
-        for line in tags.stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            date, tag = line.split(" ", 1)
-            if date >= first_date and (picked is None or date < picked[0]):
-                picked = (date, tag)
-        return picked[1] if picked else "unreleased (main)"
+        release_tags = [
+            t.strip() for t in tags.stdout.splitlines()
+            if t.strip() and _RELEASE_TAG_RE.match(t.strip())
+        ]
+        stable_tags = [t for t in release_tags if _STABLE_TAG_RE.match(t)]
+        picked = (stable_tags or release_tags)
+        if verbose:
+            print(f"  [version] release tags containing the commit: "
+                  f"{', '.join(picked) or '(none)'}")
+        return picked[0] if picked else "unreleased (main)"

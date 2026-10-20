@@ -54,10 +54,21 @@ For each framework the checker runs four framework-agnostic steps:
    - For vLLM this step additionally parses `registry.py` to extract the model
      category, module path, class name, and checks
      `_PREVIOUSLY_SUPPORTED_MODELS` / `_OOT_SUPPORTED_MODELS`.
-   - For vLLM-Ascend this step parses `__init__.py` for `ModelRegistry.register_model()`
-     calls to extract module and class.
-4. **Version** — determine the first framework release that contains the
-   implementation (via the file's earliest commit date → nearest release).
+   - For SGLang this step also scans `configs/` for architecture remaps
+     (`DeepseekV41ForCausalLM` → `DeepseekV4ForCausalLM`) and follows the
+     target to its model file.
+   - For vLLM-Ascend this step parses `__init__.py` for both
+     `ModelRegistry.register_model()` calls and dict-literal registrations
+     (e.g. `_CUSTOMIZED_MODEL_ARCHS`) to extract module and class.
+4. **Version** — the first release tag that *contains* the implementation
+   commit (stable tags preferred; synthetic `proto-*` tags ignored). For a
+   remapped architecture the remap config's first commit is used, not the
+   older base-model file.
+
+If a local snapshot contains a revert commit that removed the architecture,
+the report annotates `REVERTED in checkout`, checks upstream `main`, and
+reports whether the support was already re-landed there instead of returning
+a bare NO.
 
 The authoritative "is it supported" check uses the GitHub **code-search API**
 with a path filter on the models directory. Anonymous code search returns 403,
@@ -124,7 +135,16 @@ python3 main.py --framework vllm --arch "DeepseekV3ForCausalLM,DeepseekV2ForCaus
 | `--vllm-path`        | Local vllm repo checkout; overrides saved path for this run.                                      |
 | `--sglang-path`      | Local sglang repo checkout; overrides saved path for this run.                                    |
 | `--vllm-ascend-path` | Local vllm-ascend repo checkout; overrides saved path for this run.                               |
+| `--json`             | Emit a machine-readable JSON report on stdout; progress/diagnostics go to stderr.                 |
 | `-v, --verbose`      | Verbose output.                                                                                   |
+
+## Tests
+
+Standard library only (no pytest needed):
+
+```bash
+python3 -m unittest discover -s tests -t . -v
+```
 
 ## License
 

@@ -69,11 +69,23 @@ def parse_vllm_ascend_registry(source: str, verbose: bool = False):
         re.MULTILINE
     )
 
+    # Most Ascend models are registered through a dict literal that is later
+    # iterated into ModelRegistry.register_model(), e.g.
+    #   _CUSTOMIZED_MODEL_ARCHS = {
+    #       "DeepseekV41ForCausalLM":
+    #           "vllm_ascend.models.deepseek_v41.vl_model:Ascend...",
+    #   }
+    # Parse the literal too; otherwise those architectures look unsupported.
+    dict_pattern = re.compile(
+        r'["\'](\w+)["\']\s*:\s*["\']([\w.]+:[\w.]+)["\']',
+        re.MULTILINE,
+    )
+
     registered = {}
+    for m in dict_pattern.finditer(source):
+        registered[m.group(1)] = m.group(2)
     for m in pattern.finditer(source):
-        arch_name = m.group(1)
-        class_path = m.group(2)
-        registered[arch_name] = class_path
+        registered[m.group(1)] = m.group(2)
 
     if verbose and registered:
         print(f"  [registry] found {len(registered)} registered models")

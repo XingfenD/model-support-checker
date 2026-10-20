@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -26,6 +27,38 @@ _REFRESH_JOIN_SECONDS = 15
 
 # Framework names that can be used with --framework
 FRAMEWORK_CHOICES = ["sglang", "vllm", "vllm-ascend", "all"]
+
+
+def build_report(model, arch, archs, arch_source, entries, freshness=None):
+    """Build the machine-readable report emitted by ``--json``."""
+    return {
+        "model": model,
+        "architecture": arch,
+        "architectures": list(archs),
+        "architecture_source": arch_source,
+        "frameworks": entries,
+        "freshness": freshness or {},
+    }
+
+
+def _emit_doctor(issues, as_json, real_stdout):
+    has_errors = any(i.severity == "error" for i in issues)
+    if as_json:
+        sys.stdout = real_stdout
+        payload = {
+            "doctor": [
+                {
+                    "severity": i.severity,
+                    "message": i.message,
+                    "framework": i.framework,
+                }
+                for i in issues
+            ]
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        state.print_report(issues)
+    return has_errors
 
 
 def main():
@@ -56,8 +89,17 @@ def main():
                     help="forget saved setup state")
     ap.add_argument("--doctor", action="store_true",
                     help="check setup state and exit")
+    ap.add_argument("--json", action="store_true",
+                    help="emit a machine-readable JSON report on stdout "
+                         "(progress/diagnostics go to stderr)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+
+    real_stdout = sys.stdout
+    if args.json:
+        # Keep stdout clean for the JSON document; all human progress output
+        # (including strategy diagnostics) is redirected to stderr.
+        sys.stdout = sys.stderr
 
     if args.reset_state:
         state.reset()
@@ -72,7 +114,8 @@ def main():
     # just report whatever is (or isn't) on disk.
     st = state.load()
     if st is None and args.doctor:
-        has_errors = state.print_report(state.doctor(st, args, framework=args.framework))
+        issues = state.doctor(st, args, framework=args.framework)
+        has_errors = _emit_doctor(issues, args.json, real_stdout)
         sys.exit(1 if has_errors else 0)
 
     if st is None:
@@ -93,7 +136,7 @@ def main():
     # directly, we inspect state and exit without touching a model.
     if args.doctor:
         issues = state.doctor(st, args, framework=args.framework)
-        has_errors = state.print_report(issues)
+        has_errors = _emit_doctor(issues, args.json, real_stdout)
         sys.exit(1 if has_errors else 0)
 
     # Build path mapping: framework name -> local path
@@ -126,6 +169,7 @@ def main():
     print(f"[1] Architecture(s): {', '.join(archs)}  (source: {src})\n")
 
     results = {}
+    entries = {}
 
     for fw_name in frameworks:
         local_path = paths.get(fw_name)
@@ -142,6 +186,24 @@ def main():
         print(f"    Supported in source: {'YES' if supported else 'NO'}"
               + (f"  ({file_path})" if file_path else ""))
 
+        # A local snapshot may contain a revert even though upstream has
+        # re-landed the support; annotate instead of reporting a flat NO.
+        revert = None
+        if not supported:
+            revert = strategy.detect_revert(arch, ctx, args.verbose)
+            if revert:
+                print(f"    REVERTED in checkout: {revert['commit']} {revert['subject']}")
+                upstream = strategy.check_upstream_support(
+                    arch, ctx, args.token, args.verbose
+                )
+                revert["upstream"] = upstream
+                if upstream and upstream["supported"]:
+                    print(f"    Upstream main: YES ({upstream['file']})")
+                elif upstream:
+                    print("    Upstream main: NO")
+                else:
+                    print("    Upstream main: check unavailable")
+
         # Framework-specific extra checks (e.g. vLLM registry)
         extra = strategy.extra_checks(arch, ctx, args.token, args.verbose, ref=args.vllm_ref)
 
@@ -157,11 +219,25 @@ def main():
         if supported:
             print(f"[4] Determining first supporting {strategy.label} version...")
             version = strategy.get_version(strategy.version_path(file_path), ctx, args.token, args.verbose)
-            print(f"    First version: {version}")
+            print(f"    First version (code presence): {version}")
         else:
             print("[4] Skipped (not found in source).")
 
         results[fw_name] = (supported, file_path, version, docs, extra, strategy)
+        entries[fw_name] = {
+            "label": strategy.label,
+            "supported": bool(supported),
+            "file": file_path,
+            "version": version,
+            "version_basis": (
+                "first stable release tag containing the implementation commit"
+                if version and version.startswith("v") else None
+            ),
+            "docs": docs,
+            "registry": extra,
+            "remap": getattr(strategy, "remap_info", None),
+            "revert": revert,
+        }
         print()
 
     # Final combined summary.
@@ -175,12 +251,29 @@ def main():
             line += f"  | since {version} | {file_path}"
         print(line)
         strategy.format_summary_extra(extra)
+        rev = entries.get(fw_name, {}).get("revert")
+        if rev:
+            note = f"NOTE: reverted in checkout ({rev['commit']});"
+            up = rev.get("upstream")
+            if up and up.get("supported"):
+                note += f" upstream main has it ({up['file']})"
+            elif up:
+                note += " upstream main also lacks it"
+            else:
+                note += " upstream check unavailable"
+            print(f"         {note}")
     print("\nNote: GitHub source is the authoritative signal for all frameworks.")
-    print("The 'since version' is approximated from the implementation file's first")
-    print("commit date and may be off by a release or two; it needs GITHUB_TOKEN")
+    print("The 'since version' is the first release tag that contains the")
+    print("implementation commit; official recipes may recommend a newer minimum.")
+    print("Version detection needs full git history (local mode) or GITHUB_TOKEN")
     print("on rate-limited IPs.")
 
     _print_refresh_notes(freshness, refresh_threads, args.verbose)
+
+    if args.json:
+        sys.stdout = real_stdout
+        report = build_report(model_display, arch, archs, src, entries, freshness)
+        print(json.dumps(report, indent=2, ensure_ascii=False))
 
 
 def _print_refresh_notes(freshness, threads, verbose=False):

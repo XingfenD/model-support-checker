@@ -46,7 +46,7 @@ python3 main.py [--framework <fw>] [--source <src>] [--arch <arch>] <model_id>
 5. If the registry does not contain the architecture, search the entire framework repo for the architecture string (e.g. `rg <ArchName> <repo_root>`) to locate where it is referenced.
 6. Update the result to YES with the correct file path.
 
-**Step 5 — Report.** Parse Summary. Report: YES/NO per framework, minimum version, file path, vLLM category/module/class.
+**Step 5 — Report.** Parse Summary. Report: YES/NO per framework, minimum version, file path, vLLM category/module/class. The minimum version is the first release tag that *contains* the implementation commit (stable preferred, synthetic `proto-*` tags ignored); note that official recipes may recommend a newer minimum.
 
 **Step 6 — Deployment advice.** After confirming support, do NOT stop at "YES" — the user's real goal is to run the model. Produce deployment advice in TWO rounds: an official-command template first, a customized ready-to-run command after the user's environment is known.
 
@@ -165,6 +165,7 @@ The official model card + recipes are authoritative about HOW to run, even when 
 | `--arch` | Manual arch name(s); skips config.json |
 | `--doctor` | Check setup state |
 | `--setup` | `local` or `token` |
+| `--json` | Machine-readable report on stdout (progress goes to stderr) |
 
 `python3 main.py --help` for full flag list.
 
@@ -182,3 +183,5 @@ The official model card + recipes are authoritative about HOW to run, even when 
 - **Copying the docs' log redirection into the customized command** — official scripts often end with `> ${LOG_PATH} 2>&1 &`; in a container this hides startup errors from `nerdctl logs` / `docker logs`. Run the server in the foreground (Step 6.6).
 - **Auto-implementing checker improvements during a support check** — Step 7 is report-first. Do not edit `main.py`, `src/`, or add scripts just because you spotted a defect; the user decides which candidates to fund.
 - **Reporting vague "tool defects" instead of candidates** — classify each as `feat` or `bugfix`, name the file/flag and expected effect. A prose complaint the user cannot prioritize is not an automation harvest.
+- **Reporting a flat NO from a snapshot that contains a revert** — check the `REVERTED in checkout` annotation and upstream `main`; vLLM-Ascend's V4.1 support was reverted (#16905) and later re-landed.
+- **Trusting a version derived from tag creation date** — pick the first release tag that *contains* the implementation commit; ignore synthetic `proto-*` tags and unrelated later tags.
