@@ -125,13 +125,12 @@ def doctor(st, args=None, framework=None):
             )
             continue
 
-        init_file = os.path.join(path, strategy.models_dir, "__init__.py")
-        if not os.path.isfile(init_file):
+        problem = strategy.checkout_problem(path)
+        if problem:
             issues.append(
                 Issue(
                     "warning",
-                    f"{strategy.models_dir}/__init__.py not found under {path}; "
-                    "is this really a checkout?",
+                    f"{problem}; is this really a checkout?",
                     framework=strategy.label,
                 )
             )

@@ -23,11 +23,9 @@ def clone(url, target):
 def validate_checkout(path, fw_name):
     """Validate that a path looks like a valid framework checkout."""
     strategy = STRATEGIES[fw_name]
-    if not os.path.isfile(os.path.join(path, strategy.models_dir, "__init__.py")):
-        print(
-            f"  WARNING: {strategy.models_dir} not found under {path}; "
-            f"is this really a {strategy.label} checkout?"
-        )
+    problem = strategy.checkout_problem(path)
+    if problem:
+        print(f"  WARNING: {problem}; is this really a {strategy.label} checkout?")
 
 
 def get_clone_url(fw_name):

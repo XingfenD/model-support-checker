@@ -29,6 +29,23 @@ class FrameworkStrategy:
     def make_context(self, local_dir: Optional[str] = None) -> Context:
         return Context.from_strategy(self, local_dir)
 
+    def checkout_problem(self, path: str) -> Optional[str]:
+        """Return why *path* does not look like a usable checkout, or None.
+
+        The models directory is the common anchor, but not every framework
+        keeps an ``__init__.py`` in it: SGLang's models directory is a PEP 420
+        namespace package.  Check for the directory and at least one Python
+        file instead of assuming a regular package.
+        """
+        models = os.path.join(path, self.models_dir)
+        try:
+            names = os.listdir(models)
+        except OSError:
+            return f"{self.models_dir} not found under {path}"
+        if not any(name.endswith(".py") for name in names):
+            return f"{self.models_dir} contains no Python files under {path}"
+        return None
+
     def check_docs(self, arch: str, verbose: bool = False) -> str:
         body, _ = _get(self.docs_url)
         if not body:
